@@ -57,6 +57,43 @@ pub fn read_database_config(
 
 Then apply `schema.migrations()` with your existing migration runner and pass the resulting `pog.Connection` into the Kairos persistence modules.
 
+## Runtime Configuration
+
+Kairos uses a typed runtime configuration and a queue-oriented supervision layout.
+Queue definitions are explicit values from `kairos/config`, not ad hoc maps, and the host application decides when Kairos is started.
+
+```gleam
+import gleam/otp/supervision.{type ChildSpecification}
+import gleam/result
+import kairos
+import kairos/config
+import kairos/runtime
+import pog
+
+pub fn build_kairos_config(
+  connection: pog.Connection,
+) -> Result(config.Config, config.ConfigError) {
+  let assert Ok(default_queue) =
+    config.queue(name: "default", concurrency: 10, poll_interval_ms: 1_000)
+  let assert Ok(mailers_queue) =
+    config.queue(name: "mailers", concurrency: 3, poll_interval_ms: 2_000)
+
+  config.new(connection: connection, queues: [default_queue, mailers_queue])
+}
+
+pub fn kairos_child(
+  connection: pog.Connection,
+) -> Result(ChildSpecification(runtime.Runtime), config.ConfigError) {
+  use kairos_config <- result.try(build_kairos_config(connection))
+  Ok(kairos.supervised(kairos_config))
+}
+```
+
+`kairos.start(config)` starts Kairos directly. `kairos.supervised(config)` returns a child specification so the host app can place Kairos inside its own supervision tree.
+
+The runtime currently establishes the root supervisor and one queue supervisor per configured queue.
+Each queue supervisor starts stub worker and poller processes so later queue execution work can replace those internals without changing the host application's startup shape.
+
 ## Development Setup
 
 ```sh
