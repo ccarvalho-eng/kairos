@@ -29,15 +29,37 @@ pub fn decode_error_test() {
 }
 
 pub fn perform_result_variants_test() {
-  assert result_name(worker.Success) == "success"
-  assert result_name(worker.Retry("retry later")) == "retry:retry later"
-  assert result_name(worker.Discard("discard permanently"))
-    == "discard:discard permanently"
-  assert result_name(worker.Cancel("cancel execution"))
-    == "cancel:cancel execution"
+  let args = ExampleArgs(name: "kairos")
+
+  assert worker.perform(success_worker(), args) == worker.Success
+  assert worker.perform(retry_worker(), args) == worker.Retry("retry later")
+  assert worker.perform(discard_worker(), args)
+    == worker.Discard("discard permanently")
+  assert worker.perform(cancel_worker(), args)
+    == worker.Cancel("cancel execution")
 }
 
 fn example_worker() -> worker.Worker(ExampleArgs) {
+  result_worker(worker.Success)
+}
+
+fn success_worker() -> worker.Worker(ExampleArgs) {
+  result_worker(worker.Success)
+}
+
+fn retry_worker() -> worker.Worker(ExampleArgs) {
+  result_worker(worker.Retry("retry later"))
+}
+
+fn discard_worker() -> worker.Worker(ExampleArgs) {
+  result_worker(worker.Discard("discard permanently"))
+}
+
+fn cancel_worker() -> worker.Worker(ExampleArgs) {
+  result_worker(worker.Cancel("cancel execution"))
+}
+
+fn result_worker(result: worker.PerformResult) -> worker.Worker(ExampleArgs) {
   worker.new(
     "example",
     fn(args) {
@@ -50,16 +72,7 @@ fn example_worker() -> worker.Worker(ExampleArgs) {
         _ -> Ok(ExampleArgs(name: payload))
       }
     },
-    fn(_args) { worker.Success },
+    fn(_args) { result },
     job.default_enqueue_options(),
   )
-}
-
-fn result_name(result: worker.PerformResult) -> String {
-  case result {
-    worker.Success -> "success"
-    worker.Retry(reason) -> "retry:" <> reason
-    worker.Discard(reason) -> "discard:" <> reason
-    worker.Cancel(reason) -> "cancel:" <> reason
-  }
 }
