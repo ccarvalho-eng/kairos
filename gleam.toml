@@ -4,7 +4,12 @@ description = "Durable background jobs for Gleam on the BEAM."
 repository = { type = "github", user = "ccarvalho-eng", repo = "kairos" }
 
 [dependencies]
+gleam_erlang = ">= 1.0.0 and < 2.0.0"
+gleam_otp = ">= 1.0.0 and < 2.0.0"
 gleam_stdlib = ">= 0.44.0 and < 2.0.0"
+gleam_time = ">= 1.0.0 and < 2.0.0"
+pog = ">= 4.0.0 and < 5.0.0"
 
 [dev-dependencies]
+envoy = ">= 1.1.0 and < 2.0.0"
 gleeunit = ">= 1.0.0 and < 2.0.0"

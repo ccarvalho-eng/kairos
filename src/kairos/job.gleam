@@ -3,6 +3,8 @@
 //// This module defines the public types used to describe job state and
 //// enqueue configuration.
 
+import gleam/time/timestamp
+
 pub type JobState {
   Pending
   Scheduled
@@ -15,6 +17,7 @@ pub type JobState {
 
 pub type Schedule {
   Immediately
+  At(timestamp.Timestamp)
 }
 
 pub opaque type EnqueueOptions {
@@ -53,4 +56,29 @@ pub fn priority(options: EnqueueOptions) -> Int {
 pub fn schedule(options: EnqueueOptions) -> Schedule {
   let EnqueueOptions(schedule:, ..) = options
   schedule
+}
+
+pub fn state_name(state: JobState) -> String {
+  case state {
+    Pending -> "pending"
+    Scheduled -> "scheduled"
+    Executing -> "executing"
+    Retryable -> "retryable"
+    Completed -> "completed"
+    Discarded -> "discarded"
+    Cancelled -> "cancelled"
+  }
+}
+
+pub fn state_from_string(state: String) -> Result(JobState, Nil) {
+  case state {
+    "pending" -> Ok(Pending)
+    "scheduled" -> Ok(Scheduled)
+    "executing" -> Ok(Executing)
+    "retryable" -> Ok(Retryable)
+    "completed" -> Ok(Completed)
+    "discarded" -> Ok(Discarded)
+    "cancelled" -> Ok(Cancelled)
+    _ -> Error(Nil)
+  }
 }
