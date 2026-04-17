@@ -3,8 +3,8 @@ import gleam/otp/actor
 import gleam/otp/static_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
 import kairos/config
-import kairos/internal/named_supervisor
 import kairos/queue_stub
+import kairos/supervision/registered_supervisor
 
 pub opaque type Runtime {
   Runtime(
@@ -28,18 +28,20 @@ pub fn start(
   queue queue: config.Queue,
 ) -> Result(actor.Started(Runtime), actor.StartError) {
   let runtime = from_queue(queue)
+  let Runtime(
+    supervisor_name: supervisor_name,
+    worker_name: worker_name,
+    poller_name: poller_name,
+    ..,
+  ) = runtime
   let builder =
     static_supervisor.new(static_supervisor.OneForAll)
-    |> static_supervisor.add(
-      queue_stub.supervised(name: config.queue_worker_name(queue)),
-    )
-    |> static_supervisor.add(
-      queue_stub.supervised(name: config.queue_poller_name(queue)),
-    )
+    |> static_supervisor.add(queue_stub.supervised(name: worker_name))
+    |> static_supervisor.add(queue_stub.supervised(name: poller_name))
 
   case
-    named_supervisor.start(
-      config.queue_supervisor_name(queue),
+    registered_supervisor.start(
+      supervisor_name,
       builder,
       "queue supervisor name already registered",
     )

@@ -1,3 +1,4 @@
+import gleam/dict
 import gleam/erlang/process
 import gleam/list
 import gleam/otp/actor
@@ -5,11 +6,15 @@ import gleam/otp/static_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
 import kairos/config
-import kairos/internal/named_supervisor
 import kairos/queue_supervisor
+import kairos/supervision/registered_supervisor
 
 pub opaque type Runtime {
-  Runtime(root_name: process.Name(Nil), queues: List(queue_supervisor.Runtime))
+  Runtime(
+    root_name: process.Name(Nil),
+    queues: List(queue_supervisor.Runtime),
+    queue_map: dict.Dict(String, queue_supervisor.Runtime),
+  )
 }
 
 pub fn start(
@@ -17,6 +22,12 @@ pub fn start(
 ) -> Result(actor.Started(Runtime), actor.StartError) {
   let queues = config.queues(config)
   let queue_runtimes = queues |> list.map(queue_supervisor.from_queue)
+  let queue_map =
+    queue_runtimes
+    |> list.map(fn(queue_runtime) {
+      #(queue_supervisor.name(queue_runtime), queue_runtime)
+    })
+    |> dict.from_list
   let builder =
     queues
     |> list.fold(
@@ -28,7 +39,7 @@ pub fn start(
     )
 
   case
-    named_supervisor.start(
+    registered_supervisor.start(
       config.root_name(config),
       builder,
       "kairos root supervisor name already registered",
@@ -40,6 +51,7 @@ pub fn start(
         data: Runtime(
           root_name: config.root_name(config),
           queues: queue_runtimes,
+          queue_map: queue_map,
         ),
       ))
 
@@ -57,11 +69,8 @@ pub fn queue_names(runtime: Runtime) -> List(String) {
 }
 
 pub fn has_queue(runtime: Runtime, queue_name: String) -> Bool {
-  let Runtime(queues:, ..) = runtime
-  queues
-  |> list.any(fn(queue_runtime) {
-    queue_supervisor.name(queue_runtime) == queue_name
-  })
+  let Runtime(queue_map:, ..) = runtime
+  dict.has_key(queue_map, queue_name)
 }
 
 pub fn queue_supervisor_pid(
@@ -97,8 +106,6 @@ fn find_queue_runtime(
   runtime: Runtime,
   queue_name: String,
 ) -> Result(queue_supervisor.Runtime, Nil) {
-  let Runtime(queues:, ..) = runtime
-  list.find(queues, fn(queue_runtime) {
-    queue_supervisor.name(queue_runtime) == queue_name
-  })
+  let Runtime(queue_map:, ..) = runtime
+  dict.get(queue_map, queue_name)
 }
