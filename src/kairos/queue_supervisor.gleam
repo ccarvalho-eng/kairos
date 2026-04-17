@@ -3,6 +3,7 @@ import gleam/otp/actor
 import gleam/otp/static_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
 import kairos/config
+import kairos/internal/named_supervisor
 import kairos/queue_stub
 
 pub opaque type Runtime {
@@ -36,7 +37,13 @@ pub fn start(
       queue_stub.supervised(name: config.queue_poller_name(queue)),
     )
 
-  case start_named_supervisor(config.queue_supervisor_name(queue), builder) {
+  case
+    named_supervisor.start(
+      config.queue_supervisor_name(queue),
+      builder,
+      "queue supervisor name already registered",
+    )
+  {
     Ok(started) -> Ok(actor.Started(pid: started.pid, data: runtime))
     Error(error) -> Error(error)
   }
@@ -64,23 +71,4 @@ pub fn worker_pid(runtime: Runtime) -> Result(process.Pid, Nil) {
 pub fn poller_pid(runtime: Runtime) -> Result(process.Pid, Nil) {
   let Runtime(poller_name:, ..) = runtime
   process.named(poller_name)
-}
-
-fn start_named_supervisor(
-  name: process.Name(Nil),
-  builder: static_supervisor.Builder,
-) -> Result(actor.Started(static_supervisor.Supervisor), actor.StartError) {
-  case static_supervisor.start(builder) {
-    Ok(started) -> {
-      case process.register(started.pid, name) {
-        Ok(Nil) -> Ok(started)
-        Error(_) -> {
-          process.send_exit(started.pid)
-          Error(actor.InitFailed("queue supervisor name already registered"))
-        }
-      }
-    }
-
-    Error(error) -> Error(error)
-  }
 }

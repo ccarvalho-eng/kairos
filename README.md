@@ -69,8 +69,9 @@ pub fn kairos_child(
   pool_name: process.Name(pog.Message),
 ) -> Result(ChildSpecification(runtime.Runtime), config.ConfigError) {
   let connection = pog.named_connection(pool_name)
-  let assert Ok(default_queue) =
-    config.queue(name: "default", concurrency: 10, poll_interval_ms: 1_000)
+  use default_queue <- result.try(
+    config.queue(name: "default", concurrency: 10, poll_interval_ms: 1_000),
+  )
   use kairos_config <- result.try(
     config.new(connection: connection, queues: [default_queue]),
   )
@@ -100,10 +101,12 @@ import pog
 pub fn build_kairos_config(
   connection: pog.Connection,
 ) -> Result(config.Config, config.ConfigError) {
-  let assert Ok(default_queue) =
-    config.queue(name: "default", concurrency: 10, poll_interval_ms: 1_000)
-  let assert Ok(mailers_queue) =
-    config.queue(name: "mailers", concurrency: 3, poll_interval_ms: 2_000)
+  use default_queue <- result.try(
+    config.queue(name: "default", concurrency: 10, poll_interval_ms: 1_000),
+  )
+  use mailers_queue <- result.try(
+    config.queue(name: "mailers", concurrency: 3, poll_interval_ms: 2_000),
+  )
 
   config.new(connection: connection, queues: [default_queue, mailers_queue])
 }

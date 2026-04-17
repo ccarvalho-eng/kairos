@@ -5,6 +5,7 @@ import gleam/otp/static_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
 import kairos/config
+import kairos/internal/named_supervisor
 import kairos/queue_supervisor
 
 pub opaque type Runtime {
@@ -14,10 +15,10 @@ pub opaque type Runtime {
 pub fn start(
   config config: config.Config,
 ) -> Result(actor.Started(Runtime), actor.StartError) {
-  let queue_runtimes =
-    config.queues(config) |> list.map(queue_supervisor.from_queue)
+  let queues = config.queues(config)
+  let queue_runtimes = queues |> list.map(queue_supervisor.from_queue)
   let builder =
-    config.queues(config)
+    queues
     |> list.fold(
       static_supervisor.new(static_supervisor.OneForOne),
       fn(builder, queue) {
@@ -26,7 +27,13 @@ pub fn start(
       },
     )
 
-  case start_named_supervisor(config.root_name(config), builder) {
+  case
+    named_supervisor.start(
+      config.root_name(config),
+      builder,
+      "kairos root supervisor name already registered",
+    )
+  {
     Ok(started) ->
       Ok(actor.Started(
         pid: started.pid,
@@ -91,33 +98,7 @@ fn find_queue_runtime(
   queue_name: String,
 ) -> Result(queue_supervisor.Runtime, Nil) {
   let Runtime(queues:, ..) = runtime
-  case
-    list.find(queues, fn(queue_runtime) {
-      queue_supervisor.name(queue_runtime) == queue_name
-    })
-  {
-    Ok(queue_runtime) -> Ok(queue_runtime)
-    Error(Nil) -> Error(Nil)
-  }
-}
-
-fn start_named_supervisor(
-  name: process.Name(Nil),
-  builder: static_supervisor.Builder,
-) -> Result(actor.Started(static_supervisor.Supervisor), actor.StartError) {
-  case static_supervisor.start(builder) {
-    Ok(started) -> {
-      case process.register(started.pid, name) {
-        Ok(Nil) -> Ok(started)
-        Error(_) -> {
-          process.send_exit(started.pid)
-          Error(actor.InitFailed(
-            "kairos root supervisor name already registered",
-          ))
-        }
-      }
-    }
-
-    Error(error) -> Error(error)
-  }
+  list.find(queues, fn(queue_runtime) {
+    queue_supervisor.name(queue_runtime) == queue_name
+  })
 }
