@@ -14,24 +14,20 @@ pub fn default_enqueue_options_test() {
   assert job.schedule(options) == job.Immediately
 }
 
-pub fn job_state_variants_test() {
-  assert state_name(job.Pending) == "pending"
-  assert state_name(job.Scheduled) == "scheduled"
-  assert state_name(job.Executing) == "executing"
-  assert state_name(job.Retryable) == "retryable"
-  assert state_name(job.Completed) == "completed"
-  assert state_name(job.Discarded) == "discarded"
-  assert state_name(job.Cancelled) == "cancelled"
-}
-
-fn state_name(state: job.JobState) -> String {
-  case state {
-    job.Pending -> "pending"
-    job.Scheduled -> "scheduled"
-    job.Executing -> "executing"
-    job.Retryable -> "retryable"
-    job.Completed -> "completed"
-    job.Discarded -> "discarded"
-    job.Cancelled -> "cancelled"
-  }
+pub fn job_state_round_trip_test() {
+  assert job.state_name(job.Pending) == "pending"
+  assert job.state_name(job.Scheduled) == "scheduled"
+  assert job.state_name(job.Executing) == "executing"
+  assert job.state_name(job.Retryable) == "retryable"
+  assert job.state_name(job.Completed) == "completed"
+  assert job.state_name(job.Discarded) == "discarded"
+  assert job.state_name(job.Cancelled) == "cancelled"
+  assert job.state_from_string("pending") == Ok(job.Pending)
+  assert job.state_from_string("scheduled") == Ok(job.Scheduled)
+  assert job.state_from_string("executing") == Ok(job.Executing)
+  assert job.state_from_string("retryable") == Ok(job.Retryable)
+  assert job.state_from_string("completed") == Ok(job.Completed)
+  assert job.state_from_string("discarded") == Ok(job.Discarded)
+  assert job.state_from_string("cancelled") == Ok(job.Cancelled)
+  assert job.state_from_string("unknown") == Error(Nil)
 }
