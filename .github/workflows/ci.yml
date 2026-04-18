@@ -15,7 +15,6 @@ concurrency:
 
 env:
   GLEAM_VERSION: "1.14.0"
-  POSTGRES_VERSION: "16"
 
 jobs:
   format:
@@ -49,7 +48,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:${{ env.POSTGRES_VERSION }}
+        image: postgres:16
         env:
           POSTGRES_DB: kairos_test
           POSTGRES_PASSWORD: postgres
