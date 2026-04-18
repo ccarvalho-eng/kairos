@@ -45,6 +45,39 @@ pub fn poller_automatically_dispatches_pending_jobs_test() {
   })
 }
 
+pub fn poller_remains_alive_across_idle_cycles_test() {
+  test_db.with_database(fn(connection) {
+    let contract = success_worker("workers.idle")
+    let assert Ok(default_queue) =
+      queue.new(name: "default", concurrency: 1, poll_interval_ms: 25)
+    let assert Ok(kairos_config) =
+      config.new(connection: connection, queues: [default_queue], workers: [
+        worker.register(contract),
+      ])
+    let assert Ok(started) = kairos.start(kairos_config)
+    let runtime = started.data
+
+    let assert Ok(initial_poller_pid) =
+      supervision.queue_poller_pid(runtime, "default")
+
+    process.sleep(125)
+
+    let assert Ok(current_poller_pid) =
+      supervision.queue_poller_pid(runtime, "default")
+    let assert Ok(enqueued) =
+      kairos.enqueue(kairos_config, contract, ExampleArgs(name: "idle"))
+    let job.EnqueuedJob(id:, ..) = enqueued
+    let completed = wait_for_completed_job(connection, id, 80)
+    let job_store.PersistedJob(state:, ..) = completed
+
+    assert process.is_alive(current_poller_pid)
+    assert current_poller_pid == initial_poller_pid
+    assert state == job.Completed
+
+    stop_process(started.pid)
+  })
+}
+
 pub fn poller_dispatches_scheduled_and_retryable_jobs_when_runnable_test() {
   test_db.with_database(fn(connection) {
     let now = timestamp.system_time()
