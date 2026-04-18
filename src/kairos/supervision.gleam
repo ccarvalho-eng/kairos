@@ -7,8 +7,8 @@ import gleam/otp/static_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
 import kairos/config
-import kairos/job_runner
-import kairos/queue_reaper
+import kairos/runtime/job_runner
+import kairos/runtime/queue_reaper
 import kairos/supervision/name
 import kairos/supervision/queue_runtime
 import kairos/supervision/queue_supervisor

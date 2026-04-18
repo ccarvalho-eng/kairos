@@ -8,8 +8,8 @@ import gleam/result
 import gleam/string
 import gleam/time/timestamp
 import kairos/config
-import kairos/job_runner
 import kairos/postgres/job_store
+import kairos/runtime/job_runner
 import pog
 
 pub type DispatchClaimedError {

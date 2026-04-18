@@ -8,9 +8,9 @@ import gleam/result
 import gleam/string
 import gleam/time/timestamp
 import kairos/config
-import kairos/job_runner
 import kairos/postgres/job_store
-import kairos/queue_dispatch
+import kairos/runtime/job_runner
+import kairos/runtime/queue_dispatch
 
 pub type Message {
   Tick

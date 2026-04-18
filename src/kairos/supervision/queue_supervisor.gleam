@@ -3,9 +3,9 @@ import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
 import kairos/config
-import kairos/job_runner
-import kairos/queue_poller
-import kairos/queue_reaper
+import kairos/runtime/job_runner
+import kairos/runtime/queue_poller
+import kairos/runtime/queue_reaper
 import kairos/supervision/queue_runtime
 import kairos/supervision/registered_supervisor
 

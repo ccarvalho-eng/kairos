@@ -7,12 +7,12 @@ import gleeunit
 import kairos
 import kairos/config
 import kairos/job
-import kairos/job_runner
 import kairos/postgres/job_store
 import kairos/postgres/test_db
 import kairos/queue
-import kairos/queue_dispatch
 import kairos/queue_dispatcher
+import kairos/runtime/job_runner
+import kairos/runtime/queue_dispatch
 import kairos/supervision
 import kairos/worker
 import pog
