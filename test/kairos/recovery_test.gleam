@@ -171,6 +171,48 @@ pub fn recover_stale_ignores_recent_executing_jobs_test() {
   })
 }
 
+pub fn recover_stale_ignores_non_positive_stale_window_test() {
+  test_db.with_database(fn(connection) {
+    let now = timestamp.system_time()
+    let stale_attempted_at = timestamp.add(now, duration.minutes(-10))
+    let contract = result_worker("workers.non_positive", worker.Success)
+    let assert Ok(default_queue) =
+      queue.new(name: "default", concurrency: 5, poll_interval_ms: 1000)
+    let assert Ok(kairos_config) =
+      config.new(connection: connection, queues: [default_queue], workers: [
+        worker.register(contract),
+      ])
+    let assert Ok(started) = kairos.start(kairos_config)
+    let stale_job =
+      insert_executing_job(
+        connection,
+        worker_name: "workers.non_positive",
+        attempt: 1,
+        max_attempts: 3,
+        attempted_at: stale_attempted_at,
+      )
+
+    let assert Ok(0) =
+      kairos.recover_stale(
+        started.data,
+        "default",
+        now,
+        duration.milliseconds(0),
+      )
+
+    let job_store.PersistedJob(id:, ..) = stale_job
+    let assert Ok(Some(stored_job)) = job_store.fetch(connection, id)
+    let job_store.PersistedJob(state:, attempted_at:, errors:, ..) = stored_job
+
+    assert state == job.Executing
+    assert attempted_at
+      == Some(test_db.to_postgres_precision(stale_attempted_at))
+    assert list.is_empty(errors)
+
+    process.send_exit(started.pid)
+  })
+}
+
 fn result_worker(
   name: String,
   result: worker.PerformResult,

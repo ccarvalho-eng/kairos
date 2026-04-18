@@ -78,13 +78,17 @@ fn recover_stale_jobs(
   now: timestamp.Timestamp,
   stale_for: duration.Duration,
 ) -> Result(Int, job_store.StoreError) {
-  let attempted_before =
-    timestamp.add(
-      now,
-      duration.milliseconds(-duration.to_milliseconds(stale_for)),
-    )
+  let stale_for_ms = duration.to_milliseconds(stale_for)
 
-  recover_stale_jobs_in_batches(state, now, attempted_before, 0)
+  case stale_for_ms <= 0 {
+    True -> Ok(0)
+    False -> {
+      let attempted_before =
+        timestamp.add(now, duration.milliseconds(-stale_for_ms))
+
+      recover_stale_jobs_in_batches(state, now, attempted_before, 0)
+    }
+  }
 }
 
 fn recover_stale_jobs_in_batches(
