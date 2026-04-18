@@ -11,9 +11,9 @@ Typed background jobs for Gleam on the BEAM.
 
 </div>
 
-Kairos is an early-stage background job runner for Gleam on the BEAM. On `main` today it provides typed worker contracts, PostgreSQL-backed job persistence, queue configuration, public enqueue APIs, and atomic job claiming.
+Kairos is an early-stage background job runner for Gleam on the BEAM. On `main` today it provides typed worker contracts, PostgreSQL-backed job persistence, queue configuration, public enqueue APIs, atomic job claiming, supervised job dispatch, cancellation before execution, and stale execution recovery.
 
-Automatic worker execution, retry backoff, and recovery behavior are still being built, so expect the `0.x` API and supervision model to keep moving.
+Kairos still does not run an always-on queue loop by itself, so expect the `0.x` API and supervision model to keep moving while runtime automation fills in.
 
 ## Installation
 
@@ -33,8 +33,11 @@ Kairos on `main` currently supports:
 - configuring named queues and supervising Kairos inside a host app
 - enqueueing jobs with queue, priority, max-attempts, and schedule options
 - storing jobs in PostgreSQL and atomically claiming runnable jobs per queue
+- dispatching claimed jobs through supervised runners
+- cancelling queued jobs before execution
+- recovering stale `executing` jobs back into a runnable or terminal state
 
-Kairos on `main` does not yet run an always-on execution loop. Claiming is available now, but execution remains app-owned until the runtime layer lands.
+Kairos on `main` does not yet run an always-on execution loop. Dispatch and recovery are available now, but polling and continuous execution remain app-owned.
 
 ## Setup
 
@@ -70,7 +73,7 @@ pub fn kairos_child(
     queue.new(name: "default", concurrency: 10, poll_interval_ms: 1_000),
   )
   use kairos_config <- result.try(
-    config.new(connection: connection, queues: [default_queue]),
+    config.new(connection: connection, queues: [default_queue], workers: []),
   )
   Ok(kairos.supervised(kairos_config))
 }
@@ -117,27 +120,64 @@ pub fn enqueue_report(
 }
 ```
 
-## Claiming Jobs
+## Dispatching Jobs
 
-Kairos can already claim runnable jobs atomically from PostgreSQL. That is the current execution boundary on `main`:
+Kairos can claim runnable jobs atomically and dispatch them through supervised runners:
 
 ```gleam
 import gleam/time/timestamp
+import kairos
 import kairos/config
-import kairos/postgres/job_store
+import kairos/queue
+import kairos/queue_dispatcher
+import kairos/supervision
 
-pub fn claim_default_queue(
+pub fn dispatch_default_queue(
   kairos_config: config.Config,
-) -> List(job_store.PersistedJob) {
-  let assert Ok(claimed_jobs) =
-    job_store.claim_available(
-      config.connection(kairos_config),
-      "default",
+  runtime: supervision.Runtime,
+) -> Nil {
+  let assert Ok(default_queue) =
+    queue.new(name: "default", concurrency: 10, poll_interval_ms: 1_000)
+
+  let assert Ok(_runner_pids) =
+    queue_dispatcher.dispatch(
+      kairos_config,
+      default_queue,
+      runtime,
       timestamp.system_time(),
-      10,
     )
 
-  claimed_jobs
+  Nil
+}
+```
+
+## Cancellation And Recovery
+
+Kairos also exposes public helpers for cancelling queued jobs before they execute and for recovering stale `executing` jobs after interruption or restart:
+
+```gleam
+import gleam/time/duration
+import gleam/time/timestamp
+import kairos
+import kairos/config
+import kairos/supervision
+
+pub fn recover_default_queue(
+  kairos_config: config.Config,
+  runtime: supervision.Runtime,
+  job_id: String,
+) -> Nil {
+  let assert Ok(_) = kairos.cancel(kairos_config, job_id)
+
+  let assert Ok(_recovered_count) =
+    kairos.recover_stale(
+      runtime,
+      "default",
+      timestamp.system_time(),
+      duration.minutes(5),
+    )
+
+  Nil
 }
 ```
 

@@ -2,6 +2,7 @@ import gleam/erlang/process
 import gleam/otp/factory_supervisor
 import kairos/job_runner
 import kairos/queue
+import kairos/queue_reaper
 import kairos/supervision/name
 
 pub opaque type QueueRuntime {
@@ -12,6 +13,7 @@ pub opaque type QueueRuntime {
       factory_supervisor.Message(job_runner.RunnerArg, String),
     ),
     poller_name: process.Name(Nil),
+    reaper_name: process.Name(queue_reaper.Message),
   )
 }
 
@@ -24,6 +26,7 @@ pub fn from_queue(queue_definition: queue.Queue) -> QueueRuntime {
     supervisor_name: name.queue_supervisor(queue_name),
     runner_supervisor_name: name.queue_runner_supervisor(queue_name),
     poller_name: name.queue_poller(queue_name),
+    reaper_name: name.queue_reaper(queue_name),
   )
 }
 
@@ -53,6 +56,12 @@ pub fn poller_name(runtime: QueueRuntime) -> process.Name(Nil) {
 }
 
 @internal
+pub fn reaper_name(runtime: QueueRuntime) -> process.Name(queue_reaper.Message) {
+  let QueueRuntime(reaper_name:, ..) = runtime
+  reaper_name
+}
+
+@internal
 pub fn supervisor_pid(runtime: QueueRuntime) -> Result(process.Pid, Nil) {
   process.named(supervisor_name(runtime))
 }
@@ -65,4 +74,9 @@ pub fn runner_supervisor_pid(runtime: QueueRuntime) -> Result(process.Pid, Nil) 
 @internal
 pub fn poller_pid(runtime: QueueRuntime) -> Result(process.Pid, Nil) {
   process.named(poller_name(runtime))
+}
+
+@internal
+pub fn reaper_pid(runtime: QueueRuntime) -> Result(process.Pid, Nil) {
+  process.named(reaper_name(runtime))
 }

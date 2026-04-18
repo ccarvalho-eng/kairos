@@ -118,6 +118,18 @@ pub fn fetch(
   |> map_optional_row_result
 }
 
+pub fn fetch_for_update(
+  connection: db.Connection,
+  id: String,
+) -> Result(Option(PersistedJob), StoreError) {
+  query.fetch_for_update()
+  |> db.query
+  |> db.parameter(db.text(id))
+  |> db.returning(raw_job.decoder())
+  |> db.execute(connection)
+  |> map_optional_row_result
+}
+
 pub fn fetch_available(
   connection: db.Connection,
   now: timestamp.Timestamp,
@@ -126,6 +138,22 @@ pub fn fetch_available(
   query.fetch_available()
   |> db.query
   |> db.parameter(db.timestamp(now))
+  |> db.parameter(db.int(limit))
+  |> db.returning(raw_job.decoder())
+  |> db.execute(connection)
+  |> map_many_row_result
+}
+
+pub fn fetch_stale_executing(
+  connection: db.Connection,
+  queue_name: String,
+  attempted_before: timestamp.Timestamp,
+  limit: Int,
+) -> Result(List(PersistedJob), StoreError) {
+  query.fetch_stale_executing()
+  |> db.query
+  |> db.parameter(db.text(queue_name))
+  |> db.parameter(db.timestamp(attempted_before))
   |> db.parameter(db.int(limit))
   |> db.returning(raw_job.decoder())
   |> db.execute(connection)
@@ -201,6 +229,22 @@ pub fn cancel(
   error: String,
 ) -> Result(PersistedJob, StoreError) {
   query.cancel()
+  |> db.query
+  |> db.parameter(db.text(id))
+  |> db.parameter(db.timestamp(cancelled_at))
+  |> db.parameter(db.text(error))
+  |> db.returning(raw_job.decoder())
+  |> db.execute(connection)
+  |> map_single_row_result
+}
+
+pub fn cancel_before_execution(
+  connection: db.Connection,
+  id: String,
+  cancelled_at: timestamp.Timestamp,
+  error: String,
+) -> Result(PersistedJob, StoreError) {
+  query.cancel_before_execution()
   |> db.query
   |> db.parameter(db.text(id))
   |> db.parameter(db.timestamp(cancelled_at))

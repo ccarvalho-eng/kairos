@@ -8,6 +8,7 @@ import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
 import kairos/config
 import kairos/job_runner
+import kairos/queue_reaper
 import kairos/supervision/name
 import kairos/supervision/queue_runtime
 import kairos/supervision/queue_supervisor
@@ -25,8 +26,17 @@ pub fn start(
   config config: config.Config,
 ) -> Result(actor.Started(Runtime), actor.StartError) {
   let root_name = name.root_supervisor()
+  let queue_pairs =
+    config.queues(config)
+    |> list.map(fn(queue_definition) {
+      #(queue_runtime.from_queue(queue_definition), queue_definition)
+    })
   let queue_runtimes =
-    config.queues(config) |> list.map(queue_runtime.from_queue)
+    queue_pairs
+    |> list.map(fn(pair) {
+      let #(runtime_for_queue, _) = pair
+      runtime_for_queue
+    })
   let queue_map =
     queue_runtimes
     |> list.map(fn(runtime_for_queue) {
@@ -34,12 +44,14 @@ pub fn start(
     })
     |> dict.from_list
   let builder =
-    queue_runtimes
+    queue_pairs
     |> list.fold(
       static_supervisor.new(static_supervisor.OneForOne),
-      fn(builder, runtime_for_queue) {
+      fn(builder, pair) {
+        let #(runtime_for_queue, _) = pair
         builder
         |> static_supervisor.add(queue_supervisor.supervised(
+          config: config,
           runtime: runtime_for_queue,
         ))
       },
@@ -117,6 +129,24 @@ pub fn queue_poller_pid(
 ) -> Result(process.Pid, Nil) {
   use runtime_for_queue <- result.try(find_queue_runtime(runtime, queue_name))
   queue_runtime.poller_pid(runtime_for_queue)
+}
+
+@internal
+pub fn queue_reaper_pid(
+  runtime: Runtime,
+  queue_name: String,
+) -> Result(process.Pid, Nil) {
+  use runtime_for_queue <- result.try(find_queue_runtime(runtime, queue_name))
+  queue_runtime.reaper_pid(runtime_for_queue)
+}
+
+@internal
+pub fn queue_reaper_name(
+  runtime: Runtime,
+  queue_name: String,
+) -> Result(process.Name(queue_reaper.Message), Nil) {
+  use runtime_for_queue <- result.try(find_queue_runtime(runtime, queue_name))
+  Ok(queue_runtime.reaper_name(runtime_for_queue))
 }
 
 pub fn root_pid(runtime: Runtime) -> Result(process.Pid, Nil) {

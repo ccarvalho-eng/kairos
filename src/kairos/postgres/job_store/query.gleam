@@ -47,6 +47,17 @@ pub fn fetch() -> String {
 }
 
 @internal
+pub fn fetch_for_update() -> String {
+  "
+  SELECT
+  " <> selected_columns("kairos_jobs") <> "
+  FROM kairos_jobs
+  WHERE id = $1
+  FOR UPDATE
+  "
+}
+
+@internal
 pub fn fetch_available() -> String {
   "
   SELECT
@@ -57,6 +68,29 @@ pub fn fetch_available() -> String {
     AND attempt < max_attempts
   ORDER BY priority DESC, scheduled_at ASC, inserted_at ASC
   LIMIT $2
+  "
+}
+
+@internal
+pub fn fetch_stale_executing() -> String {
+  "
+  WITH stale AS (
+    SELECT id
+    FROM kairos_jobs
+    WHERE queue_name = $1
+      AND state = 'executing'
+      AND attempted_at IS NOT NULL
+      AND attempted_at <= $2
+    ORDER BY attempted_at ASC, inserted_at ASC
+    LIMIT $3
+    FOR UPDATE SKIP LOCKED
+  )
+  SELECT
+  " <> selected_columns("kairos_jobs") <> "
+  FROM kairos_jobs
+  INNER JOIN stale
+    ON kairos_jobs.id = stale.id
+  ORDER BY kairos_jobs.attempted_at ASC, kairos_jobs.inserted_at ASC
   "
 }
 
@@ -132,6 +166,19 @@ pub fn cancel() -> String {
     errors = array_append(kairos_jobs.errors, $3::TEXT)
   WHERE id = $1
     AND state = 'executing'
+  " <> returned_columns("kairos_jobs")
+}
+
+@internal
+pub fn cancel_before_execution() -> String {
+  "
+  UPDATE kairos_jobs
+  SET
+    state = 'cancelled',
+    cancelled_at = $2,
+    errors = array_append(kairos_jobs.errors, $3::TEXT)
+  WHERE id = $1
+    AND state IN ('pending', 'scheduled', 'retryable')
   " <> returned_columns("kairos_jobs")
 }
 

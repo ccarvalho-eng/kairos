@@ -1,20 +1,41 @@
+import gleam/erlang/process
+import gleam/int
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
+import gleam/result
+import gleam/time/duration
 import gleam/time/timestamp
 import kairos/config
 import kairos/job
 import kairos/postgres/job_store
 import kairos/queue
+import kairos/queue_reaper
 import kairos/supervision as kairos_supervision
 import kairos/worker
+import pog
 
 pub type EnqueueError {
   QueueNotConfigured(String)
   StoreQueryFailed
   UnexpectedStoredRowCount(expected: Int, actual: Int)
   InvalidStoredState(String)
+}
+
+pub type CancelError {
+  JobNotFound(String)
+  JobNotCancellable(job.JobState)
+  CancelStoreQueryFailed
+  CancelInvalidStoredState(String)
+  CancelUnexpectedStoredRowCount(expected: Int, actual: Int)
+}
+
+pub type RecoveryError {
+  QueueRuntimeUnavailable(String)
+  RecoveryStoreQueryFailed
+  RecoveryInvalidStoredState(String)
+  RecoveryUnexpectedStoredRowCount(expected: Int, actual: Int)
 }
 
 pub fn package_name() -> String {
@@ -75,6 +96,81 @@ pub fn enqueue_with(
         Error(error) -> Error(map_store_error(error))
       }
     }
+  }
+}
+
+@internal
+pub fn cancel_at(
+  config: config.Config,
+  id: String,
+  now: timestamp.Timestamp,
+) -> Result(Nil, CancelError) {
+  pog.transaction(config.connection(config), fn(connection) {
+    let fetched =
+      job_store.fetch_for_update(connection, id)
+      |> result.map_error(map_cancel_store_error)
+    use fetched <- result.try(fetched)
+
+    case fetched {
+      None -> Error(JobNotFound(id))
+      Some(persisted_job) -> {
+        let job_store.PersistedJob(state:, attempt:, ..) = persisted_job
+
+        case can_cancel(state) {
+          True -> {
+            let error = cancel_error(attempt)
+            let cancelled =
+              job_store.cancel_before_execution(connection, id, now, error)
+              |> result.map_error(map_cancel_store_error)
+            use _ <- result.try(cancelled)
+            Ok(Nil)
+          }
+          False -> Error(JobNotCancellable(state))
+        }
+      }
+    }
+  })
+  |> map_cancel_transaction_error
+}
+
+pub fn cancel(config: config.Config, id: String) -> Result(Nil, CancelError) {
+  cancel_at(config, id, timestamp.system_time())
+}
+
+pub fn recover_stale(
+  runtime: kairos_supervision.Runtime,
+  queue_name: String,
+  now: timestamp.Timestamp,
+  stale_for: duration.Duration,
+) -> Result(Int, RecoveryError) {
+  let reaper_name =
+    kairos_supervision.queue_reaper_name(runtime, queue_name)
+    |> result.map_error(fn(_) { QueueRuntimeUnavailable(queue_name) })
+  use reaper_name <- result.try(reaper_name)
+
+  recover_stale_in_batches(reaper_name, now, stale_for, 0)
+}
+
+fn recover_stale_in_batches(
+  reaper_name: process.Name(queue_reaper.Message),
+  now: timestamp.Timestamp,
+  stale_for: duration.Duration,
+  recovered_count: Int,
+) -> Result(Int, RecoveryError) {
+  let recovered_in_batch =
+    queue_reaper.recover(reaper_name, now, stale_for)
+    |> result.map_error(map_recovery_store_error)
+  use recovered_in_batch <- result.try(recovered_in_batch)
+
+  case recovered_in_batch {
+    0 -> Ok(recovered_count)
+    _ ->
+      recover_stale_in_batches(
+        reaper_name,
+        now,
+        stale_for,
+        recovered_count + recovered_in_batch,
+      )
   }
 }
 
@@ -153,5 +249,48 @@ fn map_store_error(error: job_store.StoreError) -> EnqueueError {
     job_store.UnexpectedRowCount(expected:, actual:) ->
       UnexpectedStoredRowCount(expected: expected, actual: actual)
     job_store.InvalidJobState(state) -> InvalidStoredState(state)
+  }
+}
+
+fn can_cancel(state: job.JobState) -> Bool {
+  case state {
+    job.Pending -> True
+    job.Scheduled -> True
+    job.Retryable -> True
+    _ -> False
+  }
+}
+
+fn cancel_error(attempt: Int) -> String {
+  "kind=cancel attempt="
+  <> int.to_string(attempt)
+  <> " reason=cancelled before execution"
+}
+
+fn map_cancel_transaction_error(
+  result: Result(Nil, pog.TransactionError(CancelError)),
+) -> Result(Nil, CancelError) {
+  case result {
+    Ok(value) -> Ok(value)
+    Error(pog.TransactionQueryError(_)) -> Error(CancelStoreQueryFailed)
+    Error(pog.TransactionRolledBack(error)) -> Error(error)
+  }
+}
+
+fn map_cancel_store_error(error: job_store.StoreError) -> CancelError {
+  case error {
+    job_store.QueryFailed(_) -> CancelStoreQueryFailed
+    job_store.InvalidJobState(state) -> CancelInvalidStoredState(state)
+    job_store.UnexpectedRowCount(expected:, actual:) ->
+      CancelUnexpectedStoredRowCount(expected: expected, actual: actual)
+  }
+}
+
+fn map_recovery_store_error(error: job_store.StoreError) -> RecoveryError {
+  case error {
+    job_store.QueryFailed(_) -> RecoveryStoreQueryFailed
+    job_store.InvalidJobState(state) -> RecoveryInvalidStoredState(state)
+    job_store.UnexpectedRowCount(expected:, actual:) ->
+      RecoveryUnexpectedStoredRowCount(expected: expected, actual: actual)
   }
 }
