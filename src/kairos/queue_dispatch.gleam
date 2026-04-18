@@ -66,6 +66,8 @@ fn start_claimed_jobs(
           case started_pids, supervisor_unavailable(start_error) {
             [], True -> Error(QueueRuntimeUnavailable(queue_name))
             _, _ ->
+              // Keep already-started runners alive and only release the
+              // unstarted tail back into the queue.
               case
                 release_claimed_jobs(
                   config,
@@ -120,6 +122,8 @@ fn format_dispatch_failure(
 
 fn supervisor_unavailable(start_error: actor.StartError) -> Bool {
   case start_error {
+    // This relies on the BEAM's noproc formatting. A false negative is safe
+    // here because the fallback path still attempts to release claimed jobs.
     actor.InitExited(process.Abnormal(reason)) ->
       string.contains(string.inspect(reason), "noproc")
     _ -> False

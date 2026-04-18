@@ -217,7 +217,7 @@ fn wait_for_completed_job(
 
   case state, remaining_attempts {
     job.Completed, _ -> stored
-    _, 0 -> panic as "timed out waiting for completed job state"
+    _, 0 -> panic as { "timed out waiting for job " <> id <> " to complete" }
     _, _ -> {
       process.sleep(25)
       wait_for_completed_job(connection, id, remaining_attempts - 1)
@@ -233,7 +233,10 @@ fn wait_for_new_poller_pid(
 ) -> process.Pid {
   case supervision.queue_poller_pid(runtime, queue_name), remaining_attempts {
     Ok(current_pid), _ if current_pid != previous_pid -> current_pid
-    _, 0 -> panic as "timed out waiting for restarted poller"
+    _, 0 ->
+      panic as {
+        "timed out waiting for poller restart on queue " <> queue_name
+      }
     _, _ -> {
       process.sleep(25)
       wait_for_new_poller_pid(
