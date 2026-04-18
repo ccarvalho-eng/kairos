@@ -1,5 +1,7 @@
 <div align="center">
 
+<img width="80" alt="kairos-logo" src="https://github.com/user-attachments/assets/5f75f409-82ca-46f5-91c6-91ec4d4379a2" />
+
 # Kairos
 
 [![CI](https://github.com/ccarvalho-eng/kairos/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ccarvalho-eng/kairos/actions/workflows/ci.yml)
