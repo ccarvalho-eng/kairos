@@ -27,19 +27,22 @@ pub fn dispatch_claimed(
   claimed_jobs: List(job_store.PersistedJob),
   now: timestamp.Timestamp,
 ) -> Result(List(process.Pid), DispatchClaimedError) {
-  let runner_supervisor_pid =
-    process.named(runner_supervisor_name)
-    |> result.map_error(fn(_) { QueueRuntimeUnavailable(queue_name) })
-  use _ <- result.try(runner_supervisor_pid)
-
   let runner_supervisor = factory_supervisor.get_by_name(runner_supervisor_name)
 
-  start_claimed_jobs(runner_supervisor, config, claimed_jobs, now, [])
+  start_claimed_jobs(
+    runner_supervisor,
+    config,
+    queue_name,
+    claimed_jobs,
+    now,
+    [],
+  )
 }
 
 fn start_claimed_jobs(
   runner_supervisor: factory_supervisor.Supervisor(job_runner.RunnerArg, String),
   config: config.Config,
+  queue_name: String,
   claimed_jobs: List(job_store.PersistedJob),
   now: timestamp.Timestamp,
   started_pids: List(process.Pid),
@@ -54,24 +57,28 @@ fn start_claimed_jobs(
         )
       {
         Ok(started) ->
-          start_claimed_jobs(runner_supervisor, config, rest, now, [
+          start_claimed_jobs(runner_supervisor, config, queue_name, rest, now, [
             started.pid,
             ..started_pids
           ])
 
         Error(start_error) ->
-          case
-            release_claimed_jobs(
-              config,
-              config.connection(config),
-              [claimed_job, ..rest],
-              now,
-              start_error,
-            )
-          {
-            Ok(Nil) -> Error(RunnerStartFailed(start_error))
-            Error(cleanup_error) ->
-              Error(ReleaseClaimedFailed(start_error, cleanup_error))
+          case started_pids, supervisor_unavailable(start_error) {
+            [], True -> Error(QueueRuntimeUnavailable(queue_name))
+            _, _ ->
+              case
+                release_claimed_jobs(
+                  config,
+                  config.connection(config),
+                  [claimed_job, ..rest],
+                  now,
+                  start_error,
+                )
+              {
+                Ok(Nil) -> Error(RunnerStartFailed(start_error))
+                Error(cleanup_error) ->
+                  Error(ReleaseClaimedFailed(start_error, cleanup_error))
+              }
           }
       }
     }
@@ -109,4 +116,12 @@ fn format_dispatch_failure(
   <> int.to_string(attempt)
   <> " reason="
   <> string.replace(string.inspect(start_error), "\n", " ")
+}
+
+fn supervisor_unavailable(start_error: actor.StartError) -> Bool {
+  case start_error {
+    actor.InitExited(process.Abnormal(reason)) ->
+      string.contains(string.inspect(reason), "noproc")
+    _ -> False
+  }
 }
