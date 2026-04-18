@@ -132,7 +132,11 @@ fn build_config(connection: pog.Connection) -> config.Config {
   let assert Ok(mailers_queue) =
     queue.new(name: "mailers", concurrency: 5, poll_interval_ms: 2000)
   let assert Ok(kairos_config) =
-    config.new(connection: connection, queues: [default_queue, mailers_queue])
+    config.new(
+      connection: connection,
+      queues: [default_queue, mailers_queue],
+      workers: [],
+    )
   kairos_config
 }
 

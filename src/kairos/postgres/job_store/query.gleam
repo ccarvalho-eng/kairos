@@ -84,6 +84,53 @@ pub fn claim_available() -> String {
   " <> returned_columns("kairos_jobs")
 }
 
+@internal
+pub fn complete() -> String {
+  "
+  UPDATE kairos_jobs
+  SET
+    state = 'completed',
+    completed_at = $2
+  WHERE id = $1
+  " <> returned_columns("kairos_jobs")
+}
+
+@internal
+pub fn retry() -> String {
+  "
+  UPDATE kairos_jobs
+  SET
+    state = 'retryable',
+    scheduled_at = $2,
+    errors = array_append(kairos_jobs.errors, $3::TEXT)
+  WHERE id = $1
+  " <> returned_columns("kairos_jobs")
+}
+
+@internal
+pub fn discard() -> String {
+  "
+  UPDATE kairos_jobs
+  SET
+    state = 'discarded',
+    discarded_at = $2,
+    errors = array_append(kairos_jobs.errors, $3::TEXT)
+  WHERE id = $1
+  " <> returned_columns("kairos_jobs")
+}
+
+@internal
+pub fn cancel() -> String {
+  "
+  UPDATE kairos_jobs
+  SET
+    state = 'cancelled',
+    cancelled_at = $2,
+    errors = array_append(kairos_jobs.errors, $3::TEXT)
+  WHERE id = $1
+  " <> returned_columns("kairos_jobs")
+}
+
 fn selected_columns(table_name: String) -> String {
   "
     " <> table_name <> ".id::TEXT,

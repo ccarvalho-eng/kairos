@@ -1,6 +1,8 @@
 import gleam/otp/actor
+import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
+import kairos/job_runner
 import kairos/supervision/queue_runtime
 import kairos/supervision/registered_supervisor
 import kairos/supervision/stub_actor
@@ -12,7 +14,9 @@ pub fn start(
   let builder =
     static_supervisor.new(static_supervisor.OneForAll)
     |> static_supervisor.add(
-      stub_actor.supervised(name: queue_runtime.worker_name(runtime)),
+      factory_supervisor.worker_child(job_runner.start)
+      |> factory_supervisor.named(queue_runtime.runner_supervisor_name(runtime))
+      |> factory_supervisor.supervised,
     )
     |> static_supervisor.add(
       stub_actor.supervised(name: queue_runtime.poller_name(runtime)),

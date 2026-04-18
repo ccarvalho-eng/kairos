@@ -1,5 +1,7 @@
 import gleam/erlang/process
+import gleam/otp/factory_supervisor
 import gleam/string
+import kairos/job_runner
 
 @internal
 pub fn root_supervisor() -> process.Name(Nil) {
@@ -12,8 +14,10 @@ pub fn queue_supervisor(queue_name: String) -> process.Name(Nil) {
 }
 
 @internal
-pub fn queue_worker(queue_name: String) -> process.Name(Nil) {
-  process.new_name("kairos-queue-worker-" <> sanitize(queue_name))
+pub fn queue_runner_supervisor(
+  queue_name: String,
+) -> process.Name(factory_supervisor.Message(job_runner.RunnerArg, String)) {
+  process.new_name("kairos-queue-runner-" <> sanitize(queue_name))
 }
 
 @internal

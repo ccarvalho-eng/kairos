@@ -2,10 +2,12 @@ import gleam/dict
 import gleam/erlang/process
 import gleam/list
 import gleam/otp/actor
+import gleam/otp/factory_supervisor
 import gleam/otp/static_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
 import kairos/config
+import kairos/job_runner
 import kairos/supervision/name
 import kairos/supervision/queue_runtime
 import kairos/supervision/queue_supervisor
@@ -88,12 +90,24 @@ pub fn queue_supervisor_pid(
 }
 
 @internal
-pub fn queue_worker_pid(
+pub fn queue_runner_supervisor_pid(
   runtime: Runtime,
   queue_name: String,
 ) -> Result(process.Pid, Nil) {
   use runtime_for_queue <- result.try(find_queue_runtime(runtime, queue_name))
-  queue_runtime.worker_pid(runtime_for_queue)
+  queue_runtime.runner_supervisor_pid(runtime_for_queue)
+}
+
+@internal
+pub fn queue_runner_supervisor_name(
+  runtime: Runtime,
+  queue_name: String,
+) -> Result(
+  process.Name(factory_supervisor.Message(job_runner.RunnerArg, String)),
+  Nil,
+) {
+  use runtime_for_queue <- result.try(find_queue_runtime(runtime, queue_name))
+  Ok(queue_runtime.runner_supervisor_name(runtime_for_queue))
 }
 
 @internal
