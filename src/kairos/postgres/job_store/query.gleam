@@ -54,6 +54,7 @@ pub fn fetch_available() -> String {
   FROM kairos_jobs
   WHERE state IN ('pending', 'scheduled', 'retryable')
     AND scheduled_at <= $1
+    AND attempt < max_attempts
   ORDER BY priority DESC, scheduled_at ASC, inserted_at ASC
   LIMIT $2
   "
