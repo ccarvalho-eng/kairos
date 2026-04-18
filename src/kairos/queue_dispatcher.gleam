@@ -72,6 +72,7 @@ fn start_claimed_jobs(
         Error(start_error) ->
           case
             release_claimed_jobs(
+              config,
               config.connection(config),
               [claimed_job, ..rest],
               now,
@@ -88,6 +89,7 @@ fn start_claimed_jobs(
 }
 
 fn release_claimed_jobs(
+  config: config.Config,
   connection: pog.Connection,
   claimed_jobs: List(job_store.PersistedJob),
   now: timestamp.Timestamp,
@@ -97,13 +99,14 @@ fn release_claimed_jobs(
     [] -> Ok(Nil)
     [claimed_job, ..rest] -> {
       let job_store.PersistedJob(id:, attempt:, ..) = claimed_job
+      let failure_reason = format_dispatch_failure(attempt, start_error)
       use _ <- result.try(job_store.retry(
         connection,
         id,
-        job_runner.retry_scheduled_at(claimed_job, now),
-        format_dispatch_failure(attempt, start_error),
+        job_runner.retry_scheduled_at(config, claimed_job, now, failure_reason),
+        failure_reason,
       ))
-      release_claimed_jobs(connection, rest, now, start_error)
+      release_claimed_jobs(config, connection, rest, now, start_error)
     }
   }
 }

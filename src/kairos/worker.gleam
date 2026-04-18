@@ -5,6 +5,7 @@
 
 import exception
 import gleam/string
+import kairos/backoff
 import kairos/job
 
 pub type DecodeError {
@@ -34,6 +35,7 @@ pub opaque type Worker(args) {
     decoder: fn(String) -> Result(args, DecodeError),
     performer: fn(args) -> PerformResult,
     default_options: job.EnqueueOptions,
+    backoff_policy: backoff.Policy,
   )
 }
 
@@ -41,6 +43,7 @@ pub opaque type RegisteredWorker {
   RegisteredWorker(
     name: String,
     execute_payload: fn(String) -> PayloadExecutionResult,
+    backoff_seconds: fn(backoff.Context) -> Int,
   )
 }
 
@@ -57,6 +60,7 @@ pub fn new(
     decoder: decoder,
     performer: performer,
     default_options: default_options,
+    backoff_policy: backoff.default_policy(),
   )
 }
 
@@ -68,6 +72,23 @@ pub fn name(contract: Worker(args)) -> String {
 pub fn default_options(contract: Worker(args)) -> job.EnqueueOptions {
   let Worker(default_options:, ..) = contract
   default_options
+}
+
+pub fn with_backoff(
+  contract: Worker(args),
+  policy: backoff.Policy,
+) -> Worker(args) {
+  let Worker(name:, encoder:, decoder:, performer:, default_options:, ..) =
+    contract
+
+  Worker(
+    name: name,
+    encoder: encoder,
+    decoder: decoder,
+    performer: performer,
+    default_options: default_options,
+    backoff_policy: policy,
+  )
 }
 
 /// Encodes worker arguments into a persisted payload string.
@@ -91,9 +112,13 @@ pub fn perform(contract: Worker(args), args: args) -> PerformResult {
 }
 
 pub fn register(contract: Worker(args)) -> RegisteredWorker {
-  RegisteredWorker(name: name(contract), execute_payload: fn(payload) {
-    run_payload(contract, payload)
-  })
+  let Worker(backoff_policy:, ..) = contract
+
+  RegisteredWorker(
+    name: name(contract),
+    execute_payload: fn(payload) { run_payload(contract, payload) },
+    backoff_seconds: fn(context) { backoff.seconds(backoff_policy, context) },
+  )
 }
 
 pub fn registered_name(registered_worker: RegisteredWorker) -> String {
@@ -108,6 +133,15 @@ pub fn execute_payload(
 ) -> PayloadExecutionResult {
   let RegisteredWorker(execute_payload:, ..) = registered_worker
   execute_payload(payload)
+}
+
+@internal
+pub fn backoff_seconds(
+  registered_worker: RegisteredWorker,
+  context: backoff.Context,
+) -> Int {
+  let RegisteredWorker(backoff_seconds:, ..) = registered_worker
+  backoff_seconds(context)
 }
 
 fn run_payload(

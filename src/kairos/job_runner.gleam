@@ -1,5 +1,4 @@
 import gleam/erlang/process
-import gleam/float
 import gleam/int
 import gleam/io
 import gleam/option.{None, Some}
@@ -7,6 +6,7 @@ import gleam/otp/actor
 import gleam/string
 import gleam/time/duration
 import gleam/time/timestamp
+import kairos/backoff
 import kairos/config
 import kairos/postgres/job_store
 import kairos/worker
@@ -60,6 +60,7 @@ fn run(
   let RunnerArg(config:, job: claimed_job, now:) = argument
   let transition = determine_transition(config, claimed_job)
   persist_or_recover_transition(
+    config,
     config.connection(config),
     claimed_job,
     now,
@@ -117,6 +118,7 @@ fn retry_or_discard(
 }
 
 fn persist_transition(
+  config: config.Config,
   connection: pog.Connection,
   claimed_job: job_store.PersistedJob,
   now: timestamp.Timestamp,
@@ -130,7 +132,7 @@ fn persist_transition(
       job_store.retry(
         connection,
         id,
-        retry_scheduled_at(claimed_job, now),
+        retry_scheduled_at(config, claimed_job, now, error),
         error,
       )
     MarkDiscarded(error) -> job_store.discard(connection, id, now, error)
@@ -139,15 +141,17 @@ fn persist_transition(
 }
 
 fn persist_or_recover_transition(
+  config: config.Config,
   connection: pog.Connection,
   claimed_job: job_store.PersistedJob,
   now: timestamp.Timestamp,
   transition: LifecycleTransition,
 ) -> Result(job_store.PersistedJob, job_store.StoreError) {
-  case persist_transition(connection, claimed_job, now, transition) {
+  case persist_transition(config, connection, claimed_job, now, transition) {
     Ok(persisted_job) -> Ok(persisted_job)
     Error(error) ->
       recover_transition_failure(
+        config,
         connection,
         claimed_job,
         now,
@@ -158,6 +162,7 @@ fn persist_or_recover_transition(
 }
 
 fn recover_transition_failure(
+  config: config.Config,
   connection: pog.Connection,
   claimed_job: job_store.PersistedJob,
   now: timestamp.Timestamp,
@@ -175,7 +180,7 @@ fn recover_transition_failure(
           job_store.retry(
             connection,
             id,
-            retry_scheduled_at(claimed_job, now),
+            retry_scheduled_at(config, claimed_job, now, recovery_error),
             recovery_error,
           )
         False -> Error(error)
@@ -186,13 +191,14 @@ fn recover_transition_failure(
 
 @internal
 pub fn retry_scheduled_at(
+  config: config.Config,
   claimed_job: job_store.PersistedJob,
   now: timestamp.Timestamp,
+  error: String,
 ) -> timestamp.Timestamp {
-  let job_store.PersistedJob(attempt:, max_attempts:, ..) = claimed_job
   timestamp.add(
     now,
-    duration.seconds(default_backoff_seconds(attempt, max_attempts)),
+    duration.seconds(retry_backoff_seconds(config, claimed_job, error)),
   )
 }
 
@@ -205,19 +211,38 @@ fn format_failure(kind: String, attempt: Int, reason: String) -> String {
   <> string.replace(reason, "\n", " ")
 }
 
-fn default_backoff_seconds(attempt: Int, max_attempts: Int) -> Int {
-  let clamped_attempt = case max_attempts <= 20 {
-    True -> attempt
-    False ->
-      float.round(int.to_float(attempt) /. int.to_float(max_attempts) *. 20.0)
-  }
+fn retry_backoff_seconds(
+  config: config.Config,
+  claimed_job: job_store.PersistedJob,
+  error: String,
+) -> Int {
+  let job_store.PersistedJob(worker_name: worker_name, ..) = claimed_job
+  let context = retry_context(claimed_job, error)
 
-  15 + pow2(int.min(clamped_attempt, 20))
+  case config.find_worker(config, worker_name) {
+    Some(registered_worker) ->
+      worker.backoff_seconds(registered_worker, context)
+    None -> backoff.seconds(backoff.default_policy(), context)
+  }
 }
 
-fn pow2(exponent: Int) -> Int {
-  case exponent <= 0 {
-    True -> 1
-    False -> 2 * pow2(exponent - 1)
-  }
+fn retry_context(
+  claimed_job: job_store.PersistedJob,
+  error: String,
+) -> backoff.Context {
+  let job_store.PersistedJob(
+    attempt: attempt,
+    max_attempts: max_attempts,
+    worker_name: worker_name,
+    queue_name: queue_name,
+    ..,
+  ) = claimed_job
+
+  backoff.new_context(
+    attempt: attempt,
+    max_attempts: max_attempts,
+    worker_name: worker_name,
+    queue_name: queue_name,
+    error: error,
+  )
 }
