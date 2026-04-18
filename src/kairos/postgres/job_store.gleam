@@ -132,6 +132,22 @@ pub fn fetch_available(
   |> map_many_row_result
 }
 
+pub fn claim_available(
+  connection: db.Connection,
+  queue_name: String,
+  now: timestamp.Timestamp,
+  limit: Int,
+) -> Result(List(PersistedJob), StoreError) {
+  query.claim_available()
+  |> db.query
+  |> db.parameter(db.text(queue_name))
+  |> db.parameter(db.timestamp(now))
+  |> db.parameter(db.int(limit))
+  |> db.returning(raw_job.decoder())
+  |> db.execute(connection)
+  |> map_many_row_result
+}
+
 fn map_single_row_result(
   result: Result(db.Returned(raw_job.RawPersistedJob), db.QueryError),
 ) -> Result(PersistedJob, StoreError) {
