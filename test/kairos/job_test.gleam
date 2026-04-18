@@ -1,3 +1,5 @@
+import gleam/time/duration
+import gleam/time/timestamp
 import gleeunit
 import kairos/job
 
@@ -30,4 +32,26 @@ pub fn job_state_round_trip_test() {
   assert job.state_from_string("discarded") == Ok(job.Discarded)
   assert job.state_from_string("cancelled") == Ok(job.Cancelled)
   assert job.state_from_string("unknown") == Error(Nil)
+}
+
+pub fn enqueue_options_can_be_updated_test() {
+  let now = timestamp.system_time()
+  let scheduled_at = timestamp.add(now, duration.minutes(15))
+  let assert Ok(queued) =
+    job.with_queue(job.default_enqueue_options(), "mailers")
+  let assert Ok(retrying) = job.with_max_attempts(queued, 5)
+  let prioritized = job.with_priority(retrying, 9)
+  let scheduled = job.with_schedule(prioritized, job.At(scheduled_at))
+
+  assert job.queue(scheduled) == "mailers"
+  assert job.max_attempts(scheduled) == 5
+  assert job.priority(scheduled) == 9
+  assert job.schedule(scheduled) == job.At(scheduled_at)
+}
+
+pub fn enqueue_options_reject_invalid_values_test() {
+  assert job.with_queue(job.default_enqueue_options(), "   ")
+    == Error(job.BlankQueueName)
+  assert job.with_max_attempts(job.default_enqueue_options(), 0)
+    == Error(job.NonPositiveMaxAttempts)
 }
