@@ -11,7 +11,7 @@ import kairos/config
 import kairos/job
 import kairos/postgres/job_store
 import kairos/queue
-import kairos/queue_reaper
+import kairos/runtime/queue_reaper
 import kairos/supervision as kairos_supervision
 import kairos/worker
 import pog

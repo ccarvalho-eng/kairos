@@ -9,10 +9,10 @@ import kairos
 import kairos/backoff
 import kairos/config
 import kairos/job
-import kairos/job_runner
 import kairos/postgres/job_store
 import kairos/postgres/test_db
 import kairos/queue
+import kairos/runtime/job_runner
 import kairos/worker
 import pog
 

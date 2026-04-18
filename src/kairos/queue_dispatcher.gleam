@@ -1,13 +1,11 @@
 import gleam/erlang/process
 import gleam/otp/actor
-import gleam/otp/factory_supervisor
 import gleam/result
 import gleam/time/timestamp
 import kairos/config
-import kairos/job_runner
 import kairos/postgres/job_store
 import kairos/queue
-import kairos/queue_dispatch
+import kairos/runtime/queue_dispatch
 import kairos/supervision
 
 pub type DispatchError {
@@ -38,25 +36,6 @@ pub fn dispatch(
     |> result.map_error(ClaimFailed)
   use claimed_jobs <- result.try(claimed_jobs)
 
-  dispatch_claimed(
-    config,
-    queue_name,
-    runner_supervisor_name,
-    claimed_jobs,
-    now,
-  )
-}
-
-@internal
-pub fn dispatch_claimed(
-  config: config.Config,
-  queue_name: String,
-  runner_supervisor_name: process.Name(
-    factory_supervisor.Message(job_runner.RunnerArg, String),
-  ),
-  claimed_jobs: List(job_store.PersistedJob),
-  now: timestamp.Timestamp,
-) -> Result(List(process.Pid), DispatchError) {
   queue_dispatch.dispatch_claimed(
     config,
     queue_name,

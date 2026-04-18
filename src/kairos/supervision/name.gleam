@@ -1,9 +1,9 @@
 import gleam/erlang/process
 import gleam/otp/factory_supervisor
 import gleam/string
-import kairos/job_runner
-import kairos/queue_poller
-import kairos/queue_reaper
+import kairos/runtime/job_runner
+import kairos/runtime/queue_poller
+import kairos/runtime/queue_reaper
 
 @internal
 pub fn root_supervisor() -> process.Name(Nil) {
