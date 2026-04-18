@@ -213,6 +213,40 @@ pub fn recover_stale_ignores_non_positive_stale_window_test() {
   })
 }
 
+pub fn recover_stale_processes_multiple_batches_test() {
+  test_db.with_database(fn(connection) {
+    let now = timestamp.system_time()
+    let stale_attempted_at = timestamp.add(now, duration.minutes(-10))
+    let contract = result_worker("workers.batched", worker.Success)
+    let assert Ok(default_queue) =
+      queue.new(name: "default", concurrency: 5, poll_interval_ms: 1000)
+    let assert Ok(kairos_config) =
+      config.new(connection: connection, queues: [default_queue], workers: [
+        worker.register(contract),
+      ])
+    let assert Ok(started) = kairos.start(kairos_config)
+    let stale_jobs =
+      insert_executing_jobs(
+        connection,
+        worker_name: "workers.batched",
+        count: 101,
+        attempted_at: stale_attempted_at,
+        jobs: [],
+      )
+
+    let assert Ok(101) =
+      kairos.recover_stale(started.data, "default", now, duration.minutes(5))
+
+    assert_jobs_recovered_retryable(
+      connection,
+      stale_jobs,
+      test_db.to_postgres_precision(now),
+    )
+
+    process.send_exit(started.pid)
+  })
+}
+
 fn result_worker(
   name: String,
   result: worker.PerformResult,
@@ -258,6 +292,55 @@ fn insert_executing_job(
     )
 
   persisted_job
+}
+
+fn insert_executing_jobs(
+  connection connection: pog.Connection,
+  worker_name worker_name: String,
+  count count: Int,
+  attempted_at attempted_at: timestamp.Timestamp,
+  jobs jobs: List(job_store.PersistedJob),
+) -> List(job_store.PersistedJob) {
+  case count {
+    0 -> list.reverse(jobs)
+    _ ->
+      insert_executing_jobs(
+        connection: connection,
+        worker_name: worker_name,
+        count: count - 1,
+        attempted_at: attempted_at,
+        jobs: [
+          insert_executing_job(
+            connection,
+            worker_name: worker_name,
+            attempt: 1,
+            max_attempts: 3,
+            attempted_at: attempted_at,
+          ),
+          ..jobs
+        ],
+      )
+  }
+}
+
+fn assert_jobs_recovered_retryable(
+  connection: pog.Connection,
+  jobs: List(job_store.PersistedJob),
+  expected_scheduled_at: timestamp.Timestamp,
+) -> Nil {
+  case jobs {
+    [] -> Nil
+    [job_store.PersistedJob(id:, ..), ..rest] -> {
+      let assert Ok(Some(stored_job)) = job_store.fetch(connection, id)
+      assert_retryable(
+        stored_job,
+        expected_scheduled_at,
+        1,
+        "kind=stale attempt=1 reason=stale execution recovered",
+      )
+      assert_jobs_recovered_retryable(connection, rest, expected_scheduled_at)
+    }
+  }
 }
 
 fn assert_retryable(

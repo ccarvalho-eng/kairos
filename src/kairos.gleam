@@ -1,3 +1,4 @@
+import gleam/erlang/process
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -147,8 +148,30 @@ pub fn recover_stale(
     |> result.map_error(fn(_) { QueueRuntimeUnavailable(queue_name) })
   use reaper_name <- result.try(reaper_name)
 
-  queue_reaper.recover(reaper_name, now, stale_for)
-  |> result.map_error(map_recovery_store_error)
+  recover_stale_in_batches(reaper_name, now, stale_for, 0)
+}
+
+fn recover_stale_in_batches(
+  reaper_name: process.Name(queue_reaper.Message),
+  now: timestamp.Timestamp,
+  stale_for: duration.Duration,
+  recovered_count: Int,
+) -> Result(Int, RecoveryError) {
+  let recovered_in_batch =
+    queue_reaper.recover(reaper_name, now, stale_for)
+    |> result.map_error(map_recovery_store_error)
+  use recovered_in_batch <- result.try(recovered_in_batch)
+
+  case recovered_in_batch {
+    0 -> Ok(recovered_count)
+    _ ->
+      recover_stale_in_batches(
+        reaper_name,
+        now,
+        stale_for,
+        recovered_count + recovered_in_batch,
+      )
+  }
 }
 
 fn validate_queue(

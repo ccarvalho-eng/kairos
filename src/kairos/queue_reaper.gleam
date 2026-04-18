@@ -67,13 +67,13 @@ pub fn recover(
 fn handle_message(state: State, message: Message) -> actor.Next(State, Message) {
   case message {
     Recover(now:, stale_for:, reply_with:) -> {
-      process.send(reply_with, recover_stale_jobs(state, now, stale_for))
+      process.send(reply_with, recover_stale_job_batch(state, now, stale_for))
       actor.continue(state)
     }
   }
 }
 
-fn recover_stale_jobs(
+fn recover_stale_job_batch(
   state: State,
   now: timestamp.Timestamp,
   stale_for: duration.Duration,
@@ -86,16 +86,15 @@ fn recover_stale_jobs(
       let attempted_before =
         timestamp.add(now, duration.milliseconds(-stale_for_ms))
 
-      recover_stale_jobs_in_batches(state, now, attempted_before, 0)
+      recover_stale_jobs_in_batch(state, now, attempted_before)
     }
   }
 }
 
-fn recover_stale_jobs_in_batches(
+fn recover_stale_jobs_in_batch(
   state: State,
   now: timestamp.Timestamp,
   attempted_before: timestamp.Timestamp,
-  recovered_count: Int,
 ) -> Result(Int, job_store.StoreError) {
   let State(config:, queue_name:) = state
 
@@ -112,18 +111,8 @@ fn recover_stale_jobs_in_batches(
       recover_jobs(connection, stale_jobs, now, 0)
     })
     |> map_transaction_error
-  use recovered_in_batch <- result.try(recovered_in_batch)
 
-  case recovered_in_batch {
-    0 -> Ok(recovered_count)
-    _ ->
-      recover_stale_jobs_in_batches(
-        state,
-        now,
-        attempted_before,
-        recovered_count + recovered_in_batch,
-      )
-  }
+  recovered_in_batch
 }
 
 fn recover_jobs(
