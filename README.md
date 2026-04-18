@@ -1,12 +1,17 @@
+<div align="center">
+
 # Kairos
 
 [![CI](https://github.com/ccarvalho-eng/kairos/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ccarvalho-eng/kairos/actions/workflows/ci.yml)
-[![Language: Gleam](https://img.shields.io/badge/language-Gleam-ffaff3)](https://gleam.run)
-[![License: Apache-2.0](https://img.shields.io/github/license/ccarvalho-eng/kairos)](./LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE)
 
-Kairos is a background job runner for Gleam on the BEAM with typed worker contracts, PostgreSQL-backed persistence, and explicit queue configuration.
+Typed background jobs for Gleam on the BEAM.
 
-Kairos is in early `0.x` development. The package API and supervision behavior are still being established.
+</div>
+
+Kairos is an early-stage background job runner for Gleam on the BEAM. On `main` today it provides typed worker contracts, PostgreSQL-backed job persistence, queue configuration, public enqueue APIs, and atomic job claiming.
+
+Automatic worker execution, retry backoff, and recovery behavior are still being built, so expect the `0.x` API and supervision model to keep moving.
 
 ## Installation
 
@@ -17,6 +22,17 @@ Once the package is published, installation will be:
 ```sh
 gleam add kairos
 ```
+
+## Current Scope
+
+Kairos on `main` currently supports:
+
+- defining typed workers with explicit payload encoding and decoding
+- configuring named queues and supervising Kairos inside a host app
+- enqueueing jobs with queue, priority, max-attempts, and schedule options
+- storing jobs in PostgreSQL and atomically claiming runnable jobs per queue
+
+Kairos on `main` does not yet run an always-on execution loop. Claiming is available now, but execution remains app-owned until the runtime layer lands.
 
 ## Setup
 
@@ -55,6 +71,71 @@ pub fn kairos_child(
     config.new(connection: connection, queues: [default_queue]),
   )
   Ok(kairos.supervised(kairos_config))
+}
+```
+
+## Enqueueing Jobs
+
+`main` already exposes a public enqueue API. A worker defines typed arguments plus explicit encoding, decoding, and perform behavior:
+
+```gleam
+import kairos
+import kairos/config
+import kairos/job
+import kairos/worker
+
+type ReportArgs {
+  ReportArgs(account_id: String)
+}
+
+pub fn report_worker() -> worker.Worker(ReportArgs) {
+  worker.new(
+    "workers.daily_report",
+    fn(args) {
+      let ReportArgs(account_id:) = args
+      account_id
+    },
+    fn(payload) { Ok(ReportArgs(account_id: payload)) },
+    fn(_args) { worker.Success },
+    job.default_enqueue_options(),
+  )
+}
+
+pub fn enqueue_report(
+  kairos_config: config.Config,
+) -> Nil {
+  let assert Ok(_) =
+    kairos.enqueue(
+      kairos_config,
+      report_worker(),
+      ReportArgs(account_id: "acct_123"),
+    )
+
+  Nil
+}
+```
+
+## Claiming Jobs
+
+Kairos can already claim runnable jobs atomically from PostgreSQL. That is the current execution boundary on `main`:
+
+```gleam
+import gleam/time/timestamp
+import kairos/config
+import kairos/postgres/job_store
+
+pub fn claim_default_queue(
+  kairos_config: config.Config,
+) -> List(job_store.PersistedJob) {
+  let assert Ok(claimed_jobs) =
+    job_store.claim_available(
+      config.connection(kairos_config),
+      "default",
+      timestamp.system_time(),
+      10,
+    )
+
+  claimed_jobs
 }
 ```
 
