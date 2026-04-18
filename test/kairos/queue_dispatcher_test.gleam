@@ -178,7 +178,7 @@ fn wait_for_job(
     job.Retryable, _ -> stored
     job.Discarded, _ -> stored
     job.Cancelled, _ -> stored
-    _, 0 -> stored
+    _, 0 -> panic as "timed out waiting for terminal job state"
     _, _ -> {
       process.sleep(25)
       wait_for_job(connection, id, remaining_attempts - 1)

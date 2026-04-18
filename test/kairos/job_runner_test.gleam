@@ -58,12 +58,13 @@ pub fn run_claimed_persists_retry_discard_and_cancel_outcomes_test() {
       result_worker("workers.retry", worker.Retry("retry later"))
     let kairos_config =
       build_config(connection, [worker.register(retry_contract)])
-    let retried = enqueue_and_run_claimed(kairos_config, retry_contract, now)
+    let claimed = enqueue_and_claim(kairos_config, retry_contract, now)
+    let retried = run_claimed(kairos_config, claimed, now)
     let job_store.PersistedJob(id: retried_id, ..) = retried
     let assert Ok(Some(stored_retried)) =
       job_store.fetch(connection, retried_id)
     let expected_retry_at =
-      retried
+      claimed
       |> job_runner.retry_scheduled_at(now)
       |> test_db.to_postgres_precision
 
@@ -189,7 +190,7 @@ pub fn run_claimed_records_crashes_and_exhausted_retries_as_discarded_test() {
 
     let expected_now = test_db.to_postgres_precision(now)
     let expected_retry_at =
-      crashed
+      crashing_job
       |> job_runner.retry_scheduled_at(now)
       |> test_db.to_postgres_precision
 
@@ -226,7 +227,7 @@ pub fn run_claimed_appends_retry_history_test() {
     let assert Ok(Some(stored_retried)) =
       job_store.fetch(connection, retried_id)
     let expected_retry_at =
-      retried
+      claimed_job
       |> job_runner.retry_scheduled_at(now)
       |> test_db.to_postgres_precision
     let job_store.PersistedJob(errors: errors, ..) = stored_retried
