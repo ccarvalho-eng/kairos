@@ -27,12 +27,14 @@ pub type CancelError {
   JobNotCancellable(job.JobState)
   CancelStoreQueryFailed
   CancelInvalidStoredState(String)
+  CancelUnexpectedStoredRowCount(expected: Int, actual: Int)
 }
 
 pub type RecoveryError {
   QueueRuntimeUnavailable(String)
   RecoveryStoreQueryFailed
   RecoveryInvalidStoredState(String)
+  RecoveryUnexpectedStoredRowCount(expected: Int, actual: Int)
 }
 
 pub fn package_name() -> String {
@@ -256,7 +258,8 @@ fn map_cancel_store_error(error: job_store.StoreError) -> CancelError {
   case error {
     job_store.QueryFailed(_) -> CancelStoreQueryFailed
     job_store.InvalidJobState(state) -> CancelInvalidStoredState(state)
-    job_store.UnexpectedRowCount(_, _) -> CancelStoreQueryFailed
+    job_store.UnexpectedRowCount(expected:, actual:) ->
+      CancelUnexpectedStoredRowCount(expected: expected, actual: actual)
   }
 }
 
@@ -264,6 +267,7 @@ fn map_recovery_store_error(error: job_store.StoreError) -> RecoveryError {
   case error {
     job_store.QueryFailed(_) -> RecoveryStoreQueryFailed
     job_store.InvalidJobState(state) -> RecoveryInvalidStoredState(state)
-    job_store.UnexpectedRowCount(_, _) -> RecoveryStoreQueryFailed
+    job_store.UnexpectedRowCount(expected:, actual:) ->
+      RecoveryUnexpectedStoredRowCount(expected: expected, actual: actual)
   }
 }

@@ -9,6 +9,8 @@ import kairos/config
 import kairos/postgres/job_store
 import pog
 
+const recovery_batch_size = 100
+
 pub type Message {
   Recover(
     now: timestamp.Timestamp,
@@ -74,6 +76,15 @@ fn recover_stale_jobs(
   now: timestamp.Timestamp,
   stale_for: duration.Duration,
 ) -> Result(Int, job_store.StoreError) {
+  recover_stale_jobs_in_batches(state, now, stale_for, 0)
+}
+
+fn recover_stale_jobs_in_batches(
+  state: State,
+  now: timestamp.Timestamp,
+  stale_for: duration.Duration,
+  recovered_count: Int,
+) -> Result(Int, job_store.StoreError) {
   let State(config:, queue_name:) = state
   let attempted_before =
     timestamp.add(
@@ -81,17 +92,34 @@ fn recover_stale_jobs(
       duration.milliseconds(-duration.to_milliseconds(stale_for)),
     )
 
-  pog.transaction(config.connection(config), fn(connection) {
-    let stale_jobs =
-      job_store.fetch_stale_executing(connection, queue_name, attempted_before)
-    use stale_jobs <- result.try(stale_jobs)
-    recover_jobs(config, connection, stale_jobs, now, 0)
-  })
-  |> map_transaction_error
+  let recovered_in_batch =
+    pog.transaction(config.connection(config), fn(connection) {
+      let stale_jobs =
+        job_store.fetch_stale_executing(
+          connection,
+          queue_name,
+          attempted_before,
+          recovery_batch_size,
+        )
+      use stale_jobs <- result.try(stale_jobs)
+      recover_jobs(connection, stale_jobs, now, 0)
+    })
+    |> map_transaction_error
+  use recovered_in_batch <- result.try(recovered_in_batch)
+
+  case recovered_in_batch {
+    0 -> Ok(recovered_count)
+    _ ->
+      recover_stale_jobs_in_batches(
+        state,
+        now,
+        stale_for,
+        recovered_count + recovered_in_batch,
+      )
+  }
 }
 
 fn recover_jobs(
-  config: config.Config,
   connection: pog.Connection,
   stale_jobs: List(job_store.PersistedJob),
   now: timestamp.Timestamp,
@@ -100,14 +128,13 @@ fn recover_jobs(
   case stale_jobs {
     [] -> Ok(recovered_count)
     [stale_job, ..rest] -> {
-      use _ <- result.try(recover_job(config, connection, stale_job, now))
-      recover_jobs(config, connection, rest, now, recovered_count + 1)
+      use _ <- result.try(recover_job(connection, stale_job, now))
+      recover_jobs(connection, rest, now, recovered_count + 1)
     }
   }
 }
 
 fn recover_job(
-  _config: config.Config,
   connection: pog.Connection,
   stale_job: job_store.PersistedJob,
   now: timestamp.Timestamp,

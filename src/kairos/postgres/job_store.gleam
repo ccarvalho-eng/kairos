@@ -148,11 +148,13 @@ pub fn fetch_stale_executing(
   connection: db.Connection,
   queue_name: String,
   attempted_before: timestamp.Timestamp,
+  limit: Int,
 ) -> Result(List(PersistedJob), StoreError) {
   query.fetch_stale_executing()
   |> db.query
   |> db.parameter(db.text(queue_name))
   |> db.parameter(db.timestamp(attempted_before))
+  |> db.parameter(db.int(limit))
   |> db.returning(raw_job.decoder())
   |> db.execute(connection)
   |> map_many_row_result

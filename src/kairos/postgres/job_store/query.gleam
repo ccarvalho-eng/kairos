@@ -82,6 +82,7 @@ pub fn fetch_stale_executing() -> String {
       AND attempted_at IS NOT NULL
       AND attempted_at <= $2
     ORDER BY attempted_at ASC, inserted_at ASC
+    LIMIT $3
     FOR UPDATE SKIP LOCKED
   )
   SELECT

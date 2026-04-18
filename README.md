@@ -134,11 +134,10 @@ import kairos/supervision
 
 pub fn dispatch_default_queue(
   kairos_config: config.Config,
+  runtime: supervision.Runtime,
 ) -> Nil {
   let assert Ok(default_queue) =
     queue.new(name: "default", concurrency: 10, poll_interval_ms: 1_000)
-  let assert Ok(started) = kairos.start(kairos_config)
-  let runtime = started.data
 
   let assert Ok(_runner_pids) =
     queue_dispatcher.dispatch(
