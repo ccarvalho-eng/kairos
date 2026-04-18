@@ -30,12 +30,15 @@ pub fn start_builds_queue_supervisors_and_stub_processes_test() {
     supervision.queue_runner_supervisor_pid(runtime, "mailers")
   let assert Ok(default_poller) =
     supervision.queue_poller_pid(runtime, "default")
+  let assert Ok(default_reaper) =
+    supervision.queue_reaper_pid(runtime, "default")
 
   assert process.is_alive(root_pid)
   assert process.is_alive(default_supervisor)
   assert process.is_alive(default_runner_supervisor)
   assert process.is_alive(mailers_runner_supervisor)
   assert process.is_alive(default_poller)
+  assert process.is_alive(default_reaper)
 
   process.send_exit(started.pid)
 }

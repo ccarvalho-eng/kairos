@@ -1,0 +1,211 @@
+import gleam/erlang/process
+import gleam/option.{None, Some}
+import gleam/time/duration
+import gleam/time/timestamp
+import gleeunit
+import kairos
+import kairos/backoff
+import kairos/config
+import kairos/job
+import kairos/postgres/job_store
+import kairos/postgres/test_db
+import kairos/queue
+import kairos/worker
+import pog
+
+type ExampleArgs {
+  ExampleArgs(name: String)
+}
+
+pub fn main() -> Nil {
+  gleeunit.main()
+}
+
+pub fn recover_stale_retries_and_discards_stale_executing_jobs_test() {
+  test_db.with_database(fn(connection) {
+    let now = timestamp.system_time()
+    let stale_attempted_at = timestamp.add(now, duration.minutes(-10))
+    let retry_contract =
+      worker.with_backoff(
+        result_worker("workers.retry", worker.Success),
+        backoff.constant_policy(90),
+      )
+    let assert Ok(default_queue) =
+      queue.new(name: "default", concurrency: 5, poll_interval_ms: 1000)
+    let assert Ok(kairos_config) =
+      config.new(connection: connection, queues: [default_queue], workers: [
+        worker.register(retry_contract),
+      ])
+    let assert Ok(started) = kairos.start(kairos_config)
+
+    let retryable_job =
+      insert_executing_job(
+        connection,
+        worker_name: "workers.retry",
+        attempt: 1,
+        max_attempts: 3,
+        attempted_at: stale_attempted_at,
+      )
+    let exhausted_job =
+      insert_executing_job(
+        connection,
+        worker_name: "workers.retry",
+        attempt: 3,
+        max_attempts: 3,
+        attempted_at: stale_attempted_at,
+      )
+
+    let assert Ok(2) =
+      kairos.recover_stale(started.data, "default", now, duration.minutes(5))
+
+    let job_store.PersistedJob(id: retryable_id, ..) = retryable_job
+    let job_store.PersistedJob(id: exhausted_id, ..) = exhausted_job
+    let assert Ok(Some(stored_retryable)) =
+      job_store.fetch(connection, retryable_id)
+    let assert Ok(Some(stored_exhausted)) =
+      job_store.fetch(connection, exhausted_id)
+
+    assert_retryable(
+      stored_retryable,
+      test_db.to_postgres_precision(now),
+      "kind=stale attempt=1 reason=stale execution recovered",
+    )
+    assert_discarded(
+      stored_exhausted,
+      test_db.to_postgres_precision(now),
+      "kind=stale attempt=3 reason=stale execution recovered",
+    )
+
+    process.send_exit(started.pid)
+  })
+}
+
+pub fn recover_stale_restores_abandoned_jobs_after_restart_test() {
+  test_db.with_database(fn(connection) {
+    let claim_now =
+      timestamp.add(timestamp.system_time(), duration.minutes(-10))
+    let recover_now = timestamp.system_time()
+    let contract = result_worker("workers.restart", worker.Success)
+    let assert Ok(default_queue) =
+      queue.new(name: "default", concurrency: 5, poll_interval_ms: 1000)
+    let assert Ok(kairos_config) =
+      config.new(connection: connection, queues: [default_queue], workers: [
+        worker.register(contract),
+      ])
+    let assert Ok(first_runtime) = kairos.start(kairos_config)
+    let scheduled_options =
+      job.with_schedule(job.default_enqueue_options(), job.At(claim_now))
+    let assert Ok(enqueued) =
+      kairos.enqueue_with(
+        kairos_config,
+        contract,
+        ExampleArgs(name: "restart"),
+        scheduled_options,
+      )
+    let job.EnqueuedJob(id:, ..) = enqueued
+
+    let assert Ok([_claimed]) =
+      job_store.claim_available(connection, "default", claim_now, 1)
+    process.send_exit(first_runtime.pid)
+
+    let assert Ok(second_runtime) = kairos.start(kairos_config)
+    let assert Ok(1) =
+      kairos.recover_stale(
+        second_runtime.data,
+        "default",
+        recover_now,
+        duration.minutes(5),
+      )
+
+    let assert Ok(Some(recovered_job)) = job_store.fetch(connection, id)
+
+    assert_retryable(
+      recovered_job,
+      test_db.to_postgres_precision(recover_now),
+      "kind=stale attempt=1 reason=stale execution recovered",
+    )
+
+    process.send_exit(second_runtime.pid)
+  })
+}
+
+fn result_worker(
+  name: String,
+  result: worker.PerformResult,
+) -> worker.Worker(ExampleArgs) {
+  worker.new(
+    name,
+    fn(args) {
+      let ExampleArgs(name:) = args
+      name
+    },
+    fn(payload) { Ok(ExampleArgs(name: payload)) },
+    fn(_args) { result },
+    job.default_enqueue_options(),
+  )
+}
+
+fn insert_executing_job(
+  connection: pog.Connection,
+  worker_name worker_name: String,
+  attempt attempt: Int,
+  max_attempts max_attempts: Int,
+  attempted_at attempted_at: timestamp.Timestamp,
+) -> job_store.PersistedJob {
+  let assert Ok(persisted_job) =
+    job_store.insert(
+      connection,
+      job_store.JobInsert(
+        worker_name: worker_name,
+        payload: "kairos",
+        state: job.Executing,
+        queue_name: "default",
+        priority: 0,
+        attempt: attempt,
+        max_attempts: max_attempts,
+        unique_key: None,
+        errors: [],
+        scheduled_at: attempted_at,
+        attempted_at: Some(attempted_at),
+        completed_at: None,
+        discarded_at: None,
+        cancelled_at: None,
+      ),
+    )
+
+  persisted_job
+}
+
+fn assert_retryable(
+  persisted_job: job_store.PersistedJob,
+  expected_scheduled_at: timestamp.Timestamp,
+  expected_error: String,
+) -> Nil {
+  let job_store.PersistedJob(
+    state: state,
+    scheduled_at: scheduled_at,
+    errors: errors,
+    ..,
+  ) = persisted_job
+
+  assert state == job.Retryable
+  assert scheduled_at == expected_scheduled_at
+  assert errors == [expected_error]
+}
+
+fn assert_discarded(
+  persisted_job: job_store.PersistedJob,
+  expected_now: timestamp.Timestamp,
+  expected_error: String,
+) -> Nil {
+  let job_store.PersistedJob(
+    state: state,
+    discarded_at: discarded_at,
+    errors: errors,
+    ..,
+  ) = persisted_job
+
+  assert state == job.Discarded
+  assert discarded_at == Some(expected_now)
+  assert errors == [expected_error]
+}
