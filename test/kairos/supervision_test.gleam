@@ -24,14 +24,17 @@ pub fn start_builds_queue_supervisors_and_stub_processes_test() {
   let assert Ok(root_pid) = supervision.root_pid(runtime)
   let assert Ok(default_supervisor) =
     supervision.queue_supervisor_pid(runtime, "default")
-  let assert Ok(default_worker) =
-    supervision.queue_worker_pid(runtime, "default")
+  let assert Ok(default_runner_supervisor) =
+    supervision.queue_runner_supervisor_pid(runtime, "default")
+  let assert Ok(mailers_runner_supervisor) =
+    supervision.queue_runner_supervisor_pid(runtime, "mailers")
   let assert Ok(default_poller) =
     supervision.queue_poller_pid(runtime, "default")
 
   assert process.is_alive(root_pid)
   assert process.is_alive(default_supervisor)
-  assert process.is_alive(default_worker)
+  assert process.is_alive(default_runner_supervisor)
+  assert process.is_alive(mailers_runner_supervisor)
   assert process.is_alive(default_poller)
 
   process.send_exit(started.pid)
@@ -56,7 +59,11 @@ fn sample_config() -> Result(config.Config, config.ConfigError) {
   let assert Ok(mailers_queue) =
     queue.new(name: "mailers", concurrency: 3, poll_interval_ms: 2000)
 
-  config.new(connection: connection, queues: [default_queue, mailers_queue])
+  config.new(
+    connection: connection,
+    queues: [default_queue, mailers_queue],
+    workers: [],
+  )
 }
 
 fn test_connection() -> pog.Connection {

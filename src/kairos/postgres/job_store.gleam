@@ -148,6 +148,68 @@ pub fn claim_available(
   |> map_many_row_result
 }
 
+pub fn complete(
+  connection: db.Connection,
+  id: String,
+  completed_at: timestamp.Timestamp,
+) -> Result(PersistedJob, StoreError) {
+  query.complete()
+  |> db.query
+  |> db.parameter(db.text(id))
+  |> db.parameter(db.timestamp(completed_at))
+  |> db.returning(raw_job.decoder())
+  |> db.execute(connection)
+  |> map_single_row_result
+}
+
+pub fn retry(
+  connection: db.Connection,
+  id: String,
+  scheduled_at: timestamp.Timestamp,
+  error: String,
+) -> Result(PersistedJob, StoreError) {
+  query.retry()
+  |> db.query
+  |> db.parameter(db.text(id))
+  |> db.parameter(db.timestamp(scheduled_at))
+  |> db.parameter(db.text(error))
+  |> db.returning(raw_job.decoder())
+  |> db.execute(connection)
+  |> map_single_row_result
+}
+
+pub fn discard(
+  connection: db.Connection,
+  id: String,
+  discarded_at: timestamp.Timestamp,
+  error: String,
+) -> Result(PersistedJob, StoreError) {
+  query.discard()
+  |> db.query
+  |> db.parameter(db.text(id))
+  |> db.parameter(db.timestamp(discarded_at))
+  |> db.parameter(db.text(error))
+  |> db.returning(raw_job.decoder())
+  |> db.execute(connection)
+  |> map_single_row_result
+}
+
+pub fn cancel(
+  connection: db.Connection,
+  id: String,
+  cancelled_at: timestamp.Timestamp,
+  error: String,
+) -> Result(PersistedJob, StoreError) {
+  query.cancel()
+  |> db.query
+  |> db.parameter(db.text(id))
+  |> db.parameter(db.timestamp(cancelled_at))
+  |> db.parameter(db.text(error))
+  |> db.returning(raw_job.decoder())
+  |> db.execute(connection)
+  |> map_single_row_result
+}
+
 fn map_single_row_result(
   result: Result(db.Returned(raw_job.RawPersistedJob), db.QueryError),
 ) -> Result(PersistedJob, StoreError) {
