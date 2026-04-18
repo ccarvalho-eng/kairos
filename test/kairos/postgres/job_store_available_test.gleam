@@ -182,6 +182,39 @@ pub fn retryable_and_terminal_state_round_trip_test() {
     assert discarded_at == Some(expected_now)
     assert discarded_errors == ["poison payload"]
 
+    let assert Ok(_) =
+      job_store.insert(
+        connection,
+        job_store.JobInsert(
+          worker_name: "ExhaustedRetryableWorker",
+          payload: "{}",
+          state: job.Retryable,
+          queue_name: "default",
+          priority: 10,
+          attempt: 5,
+          max_attempts: 5,
+          unique_key: None,
+          errors: ["max attempts reached"],
+          scheduled_at: now,
+          attempted_at: Some(now),
+          completed_at: None,
+          discarded_at: None,
+          cancelled_at: None,
+        ),
+      )
+
+    let assert Ok(available_after_exhausted) =
+      job_store.fetch_available(connection, now, 10)
+    let available_names =
+      available_after_exhausted
+      |> list.map(fn(job) {
+        let job_store.PersistedJob(worker_name:, ..) = job
+        worker_name
+      })
+
+    assert list.contains(available_names, "RetryableWorker")
+    assert !list.contains(available_names, "ExhaustedRetryableWorker")
+
     let assert Ok(Some(fetched_retryable)) =
       job_store.fetch(connection, retryable_id)
     let assert Ok(Some(fetched_completed)) =

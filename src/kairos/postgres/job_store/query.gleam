@@ -33,72 +33,14 @@ pub fn insert() -> String {
     $13::TIMESTAMPTZ,
     $14::TIMESTAMPTZ
   )
-  RETURNING
-    id::TEXT,
-    worker_name,
-    payload,
-    state,
-    queue_name,
-    priority,
-    attempt,
-    max_attempts,
-    unique_key,
-    errors,
-    (EXTRACT(EPOCH FROM scheduled_at) * 1000000)::BIGINT,
-    CASE
-      WHEN attempted_at IS NULL THEN NULL
-      ELSE (EXTRACT(EPOCH FROM attempted_at) * 1000000)::BIGINT
-    END,
-    CASE
-      WHEN completed_at IS NULL THEN NULL
-      ELSE (EXTRACT(EPOCH FROM completed_at) * 1000000)::BIGINT
-    END,
-    CASE
-      WHEN discarded_at IS NULL THEN NULL
-      ELSE (EXTRACT(EPOCH FROM discarded_at) * 1000000)::BIGINT
-    END,
-    CASE
-      WHEN cancelled_at IS NULL THEN NULL
-      ELSE (EXTRACT(EPOCH FROM cancelled_at) * 1000000)::BIGINT
-    END,
-    (EXTRACT(EPOCH FROM inserted_at) * 1000000)::BIGINT,
-    (EXTRACT(EPOCH FROM updated_at) * 1000000)::BIGINT
-  "
+  " <> returned_columns("kairos_jobs")
 }
 
 @internal
 pub fn fetch() -> String {
   "
   SELECT
-    id::TEXT,
-    worker_name,
-    payload,
-    state,
-    queue_name,
-    priority,
-    attempt,
-    max_attempts,
-    unique_key,
-    errors,
-    (EXTRACT(EPOCH FROM scheduled_at) * 1000000)::BIGINT,
-    CASE
-      WHEN attempted_at IS NULL THEN NULL
-      ELSE (EXTRACT(EPOCH FROM attempted_at) * 1000000)::BIGINT
-    END,
-    CASE
-      WHEN completed_at IS NULL THEN NULL
-      ELSE (EXTRACT(EPOCH FROM completed_at) * 1000000)::BIGINT
-    END,
-    CASE
-      WHEN discarded_at IS NULL THEN NULL
-      ELSE (EXTRACT(EPOCH FROM discarded_at) * 1000000)::BIGINT
-    END,
-    CASE
-      WHEN cancelled_at IS NULL THEN NULL
-      ELSE (EXTRACT(EPOCH FROM cancelled_at) * 1000000)::BIGINT
-    END,
-    (EXTRACT(EPOCH FROM inserted_at) * 1000000)::BIGINT,
-    (EXTRACT(EPOCH FROM updated_at) * 1000000)::BIGINT
+  " <> selected_columns("kairos_jobs") <> "
   FROM kairos_jobs
   WHERE id = $1
   "
@@ -108,39 +50,76 @@ pub fn fetch() -> String {
 pub fn fetch_available() -> String {
   "
   SELECT
-    id::TEXT,
-    worker_name,
-    payload,
-    state,
-    queue_name,
-    priority,
-    attempt,
-    max_attempts,
-    unique_key,
-    errors,
-    (EXTRACT(EPOCH FROM scheduled_at) * 1000000)::BIGINT,
-    CASE
-      WHEN attempted_at IS NULL THEN NULL
-      ELSE (EXTRACT(EPOCH FROM attempted_at) * 1000000)::BIGINT
-    END,
-    CASE
-      WHEN completed_at IS NULL THEN NULL
-      ELSE (EXTRACT(EPOCH FROM completed_at) * 1000000)::BIGINT
-    END,
-    CASE
-      WHEN discarded_at IS NULL THEN NULL
-      ELSE (EXTRACT(EPOCH FROM discarded_at) * 1000000)::BIGINT
-    END,
-    CASE
-      WHEN cancelled_at IS NULL THEN NULL
-      ELSE (EXTRACT(EPOCH FROM cancelled_at) * 1000000)::BIGINT
-    END,
-    (EXTRACT(EPOCH FROM inserted_at) * 1000000)::BIGINT,
-    (EXTRACT(EPOCH FROM updated_at) * 1000000)::BIGINT
+  " <> selected_columns("kairos_jobs") <> "
   FROM kairos_jobs
   WHERE state IN ('pending', 'scheduled', 'retryable')
     AND scheduled_at <= $1
+    AND attempt < max_attempts
   ORDER BY priority DESC, scheduled_at ASC, inserted_at ASC
   LIMIT $2
   "
+}
+
+@internal
+pub fn claim_available() -> String {
+  "
+  WITH claimable AS (
+    SELECT id
+    FROM kairos_jobs
+    WHERE queue_name = $1
+      AND state IN ('pending', 'scheduled', 'retryable')
+      AND scheduled_at <= $2
+      AND attempt < max_attempts
+    ORDER BY priority DESC, scheduled_at ASC, inserted_at ASC
+    LIMIT $3
+    FOR UPDATE SKIP LOCKED
+  )
+  UPDATE kairos_jobs
+  SET
+    state = 'executing',
+    attempt = kairos_jobs.attempt + 1,
+    attempted_at = $2
+  FROM claimable
+  WHERE kairos_jobs.id = claimable.id
+  " <> returned_columns("kairos_jobs")
+}
+
+fn selected_columns(table_name: String) -> String {
+  "
+    " <> table_name <> ".id::TEXT,
+    " <> table_name <> ".worker_name,
+    " <> table_name <> ".payload,
+    " <> table_name <> ".state,
+    " <> table_name <> ".queue_name,
+    " <> table_name <> ".priority,
+    " <> table_name <> ".attempt,
+    " <> table_name <> ".max_attempts,
+    " <> table_name <> ".unique_key,
+    " <> table_name <> ".errors,
+    (EXTRACT(EPOCH FROM " <> table_name <> ".scheduled_at) * 1000000)::BIGINT,
+    CASE
+      WHEN " <> table_name <> ".attempted_at IS NULL THEN NULL
+      ELSE (EXTRACT(EPOCH FROM " <> table_name <> ".attempted_at) * 1000000)::BIGINT
+    END,
+    CASE
+      WHEN " <> table_name <> ".completed_at IS NULL THEN NULL
+      ELSE (EXTRACT(EPOCH FROM " <> table_name <> ".completed_at) * 1000000)::BIGINT
+    END,
+    CASE
+      WHEN " <> table_name <> ".discarded_at IS NULL THEN NULL
+      ELSE (EXTRACT(EPOCH FROM " <> table_name <> ".discarded_at) * 1000000)::BIGINT
+    END,
+    CASE
+      WHEN " <> table_name <> ".cancelled_at IS NULL THEN NULL
+      ELSE (EXTRACT(EPOCH FROM " <> table_name <> ".cancelled_at) * 1000000)::BIGINT
+    END,
+    (EXTRACT(EPOCH FROM " <> table_name <> ".inserted_at) * 1000000)::BIGINT,
+    (EXTRACT(EPOCH FROM " <> table_name <> ".updated_at) * 1000000)::BIGINT
+  "
+}
+
+fn returned_columns(table_name: String) -> String {
+  "
+  RETURNING
+  " <> selected_columns(table_name)
 }
