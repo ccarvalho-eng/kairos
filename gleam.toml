@@ -1,5 +1,6 @@
 name = "kairos"
 version = "0.1.0"
+licences = ["Apache-2.0"]
 description = "A background job runner for Gleam on the BEAM."
 repository = { type = "github", user = "ccarvalho-eng", repo = "kairos" }
 

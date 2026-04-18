@@ -93,3 +93,5 @@ createdb kairos_test
 gleam format
 gleam test
 ```
+
+See `CONTRIBUTING.md` for the CI support policy, required merge checks, and CodeRabbit review defaults.

@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GLEAM_VERSION: "1.14.0"
+
+jobs:
+  format:
+    name: format
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Gleam and OTP
+        uses: erlef/setup-beam@v1
+        with:
+          gleam-version: ${{ env.GLEAM_VERSION }}
+          otp-version: "28"
+
+      - name: Check formatting
+        run: gleam format --check src test
+
+  verify:
+    name: verify (otp ${{ matrix.otp }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        otp:
+          - "27"
+          - "28"
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: kairos_test
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d kairos_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      KAIROS_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/kairos_test?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Gleam and OTP
+        uses: erlef/setup-beam@v1
+        with:
+          gleam-version: ${{ env.GLEAM_VERSION }}
+          otp-version: ${{ matrix.otp }}
+          rebar3-version: "3"
+
+      - name: Cache Gleam and rebar artifacts
+        uses: actions/cache@v4
+        with:
+          path: |
+            build/packages
+            ~/.cache/rebar3
+          key: ${{ runner.os }}-otp-${{ matrix.otp }}-gleam-${{ env.GLEAM_VERSION }}-${{ hashFiles('gleam.toml', 'manifest.toml') }}
+
+      - name: Download dependencies
+        run: gleam deps download
+
+      - name: Build
+        run: gleam check
+
+      - name: Test
+        run: gleam test

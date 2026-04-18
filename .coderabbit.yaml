@@ -1,0 +1,44 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: "en-US"
+early_access: false
+
+reviews:
+  profile: "chill"
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  review_details: false
+  collapse_walkthrough: true
+  changed_files_summary: true
+  sequence_diagrams: false
+  estimate_code_review_effort: false
+  related_issues: true
+  related_prs: false
+  poem: false
+  enable_prompt_for_ai_agents: false
+  path_filters:
+    - "!manifest.toml"
+  path_instructions:
+    - path: "src/**/*.gleam"
+      instructions: |
+        Review Kairos source changes for domain clarity, boundary separation, and explicit costs.
+        Flag hidden coupling, storage details leaking into caller-facing APIs, silent error swallowing, and queue or job state changes that could break invariants.
+    - path: "test/**/*.gleam"
+      instructions: |
+        Focus on behavior coverage, regression protection, and clear failure intent.
+        Prefer comments about missing edge cases or overly coupled assertions over style nits.
+    - path: ".github/workflows/**"
+      instructions: |
+        Focus on least-privilege permissions, deterministic job names, reasonable caching, and practical CI runtime.
+        Flag workflow steps that are hard to maintain or that make required checks brittle.
+    - path: "**/*.md"
+      instructions: |
+        Review documentation for accuracy against the current codebase, especially API names, setup steps, and review workflow guidance.
+  auto_review:
+    enabled: true
+    drafts: false
+    auto_incremental_review: true
+
+chat:
+  auto_reply: false
+  art: false
