@@ -1,6 +1,6 @@
 <div align="center">
 
-<img width="75" alt="kairos-logo" src="https://github.com/user-attachments/assets/5f75f409-82ca-46f5-91c6-91ec4d4379a2" />
+<img width="60" alt="kairos-logo" src="https://github.com/user-attachments/assets/5f75f409-82ca-46f5-91c6-91ec4d4379a2" />
 
 # Kairos
 
