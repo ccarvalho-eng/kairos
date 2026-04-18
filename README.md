@@ -1,5 +1,9 @@
 # Kairos
 
+[![CI](https://github.com/ccarvalho-eng/kairos/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ccarvalho-eng/kairos/actions/workflows/ci.yml)
+[![Language: Gleam](https://img.shields.io/badge/language-Gleam-ffaff3)](https://gleam.run)
+[![License: Apache-2.0](https://img.shields.io/github/license/ccarvalho-eng/kairos)](./LICENSE)
+
 Kairos is a background job runner for Gleam on the BEAM with typed worker contracts, PostgreSQL-backed persistence, and explicit queue configuration.
 
 Kairos is in early `0.x` development. The package API and supervision behavior are still being established.
