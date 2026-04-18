@@ -51,8 +51,7 @@ pub fn enqueue_with(
   case validate_queue(config, queue_name) {
     Error(error) -> Error(error)
     Ok(Nil) -> {
-      let scheduled_at = schedule_at(options)
-      let state = state_for_schedule(options)
+      let #(scheduled_at, state) = schedule_context(options)
       let new_job =
         job_store.JobInsert(
           worker_name: worker.name(contract),
@@ -94,17 +93,12 @@ fn validate_queue(
   }
 }
 
-fn schedule_at(options: job.EnqueueOptions) -> timestamp.Timestamp {
+fn schedule_context(
+  options: job.EnqueueOptions,
+) -> #(timestamp.Timestamp, job.JobState) {
   case job.schedule(options) {
-    job.Immediately -> timestamp.system_time()
-    job.At(scheduled_at) -> scheduled_at
-  }
-}
-
-fn state_for_schedule(options: job.EnqueueOptions) -> job.JobState {
-  case job.schedule(options) {
-    job.Immediately -> job.Pending
-    job.At(_) -> job.Scheduled
+    job.Immediately -> #(timestamp.system_time(), job.Pending)
+    job.At(scheduled_at) -> #(scheduled_at, job.Scheduled)
   }
 }
 
