@@ -2,6 +2,7 @@ import gleam/erlang/process
 import gleam/otp/actor
 import gleam/otp/static_supervisor
 
+@internal
 pub fn start(
   name: process.Name(Nil),
   builder: static_supervisor.Builder,

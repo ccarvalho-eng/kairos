@@ -1,8 +1,8 @@
 # Kairos
 
-Kairos is a durable background job library for Gleam on the BEAM, designed around typed job contracts, explicit serialization boundaries, and operational clarity.
+Kairos is a durable background job library for Gleam on the BEAM.
 
-Kairos is in early `0.x` development. The package API and runtime behavior are still being established.
+Kairos is in early `0.x` development. The package API and supervision behavior are still being established.
 
 ## Installation
 
@@ -14,39 +14,10 @@ Once the package is published, installation will be:
 gleam add kairos
 ```
 
-## PostgreSQL Schema
+## Setup
 
-Kairos ships PostgreSQL schema definitions through `kairos/postgres/schema`.
-Applications are expected to apply `schema.migrations()` in version order with their own migration runner.
-
-## PostgreSQL Setup
-
-The PostgreSQL integration suite expects:
-
-- a reachable PostgreSQL database
-- the `pgcrypto` extension to be available
-- a dedicated test database, referenced by `KAIROS_TEST_DATABASE_URL`
-
-The integration harness recreates `kairos_jobs`, so do not point `KAIROS_TEST_DATABASE_URL` at a shared development or production database.
-If your deployment role cannot create extensions, install `pgcrypto` before running the Kairos schema migration.
-
-One local setup is:
-
-```sh
-createdb kairos_test
-export KAIROS_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/kairos_test?sslmode=disable
-```
-
-## Existing Apps
-
-Kairos is a library, so the consuming application should own environment loading and pool supervision.
-For existing Gleam/OTP apps, the recommended shape is:
-
-- read `DATABASE_URL` in the application layer using your existing config or env-loading approach
-- include an explicit `sslmode` in that URL outside local development
-- build a `pog.Config`
-- start the `pog` pool in your supervision tree
-- pass a named `pog.Connection` into Kairos configuration and persistence modules
+Kairos exposes migrations through `kairos/migration`.
+Apply `migration.migrations()` with your existing migration runner, start your PostgreSQL pool, build a `config.Config`, and start Kairos in your supervision tree.
 
 ```gleam
 import gleam/erlang/process
@@ -54,7 +25,9 @@ import gleam/otp/supervision.{type ChildSpecification}
 import gleam/result
 import kairos
 import kairos/config
-import kairos/runtime
+import kairos/migration
+import kairos/queue
+import kairos/supervision
 import pog
 
 pub fn database_pool(
@@ -67,10 +40,10 @@ pub fn database_pool(
 
 pub fn kairos_child(
   pool_name: process.Name(pog.Message),
-) -> Result(ChildSpecification(runtime.Runtime), config.ConfigError) {
+) -> Result(ChildSpecification(supervision.Runtime), config.ConfigError) {
   let connection = pog.named_connection(pool_name)
   use default_queue <- result.try(
-    config.queue(name: "default", concurrency: 10, poll_interval_ms: 1_000),
+    queue.new(name: "default", concurrency: 10, poll_interval_ms: 1_000),
   )
   use kairos_config <- result.try(
     config.new(connection: connection, queues: [default_queue]),
@@ -79,57 +52,37 @@ pub fn kairos_child(
 }
 ```
 
-`pog.url_config/2` defaults to `sslmode=disable` when the URL omits an SSL mode, so production and other non-local environments should provide `sslmode=require`, `sslmode=verify-ca`, or `sslmode=verify-full` in `DATABASE_URL`.
+## PostgreSQL Setup
 
-`pog.supervised/1` connects asynchronously and retries in the background, so database reachability should be treated as a readiness concern in the host application rather than assuming the supervision tree only starts once PostgreSQL is available.
+The PostgreSQL integration suite expects:
 
-Then apply `schema.migrations()` with your existing migration runner and pass the resulting named `pog.Connection` into the Kairos persistence modules.
+- a reachable PostgreSQL database
+- the `pgcrypto` extension to be available
+- a dedicated test database
 
-## Runtime Configuration
+By default the integration tests use:
 
-Kairos uses a typed runtime configuration and a queue-oriented supervision layout.
-Queue definitions are explicit values from `kairos/config`, not ad hoc maps, and the host application decides when Kairos is started.
-
-```gleam
-import gleam/otp/supervision.{type ChildSpecification}
-import gleam/result
-import kairos
-import kairos/config
-import kairos/runtime
-import pog
-
-pub fn build_kairos_config(
-  connection: pog.Connection,
-) -> Result(config.Config, config.ConfigError) {
-  use default_queue <- result.try(
-    config.queue(name: "default", concurrency: 10, poll_interval_ms: 1_000),
-  )
-  use mailers_queue <- result.try(
-    config.queue(name: "mailers", concurrency: 3, poll_interval_ms: 2_000),
-  )
-
-  config.new(connection: connection, queues: [default_queue, mailers_queue])
-}
-
-pub fn kairos_child(
-  connection: pog.Connection,
-) -> Result(ChildSpecification(runtime.Runtime), config.ConfigError) {
-  use kairos_config <- result.try(build_kairos_config(connection))
-  Ok(kairos.supervised(kairos_config))
-}
+```sh
+postgresql://postgres:postgres@localhost:5432/kairos_test?sslmode=disable
 ```
 
-`kairos.start(config)` starts Kairos directly. `kairos.supervised(config)` returns a child specification so the host app can place Kairos inside its own supervision tree.
+Override that by setting `KAIROS_TEST_DATABASE_URL` when your local PostgreSQL setup differs.
 
-The runtime currently establishes the root supervisor and one queue supervisor per configured queue.
-Each queue supervisor starts stub worker and poller processes so later queue execution work can replace those internals without changing the host application's startup shape.
+The integration harness recreates `kairos_jobs`, so do not point `KAIROS_TEST_DATABASE_URL` at a shared development or production database.
+If your deployment role cannot create extensions, install `pgcrypto` before running the Kairos schema migration.
+
+One local setup is:
+
+```sh
+createdb kairos_test
+export KAIROS_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/kairos_test?sslmode=disable
+```
 
 ## Development Setup
 
 ```sh
 gleam deps download
 createdb kairos_test
-export KAIROS_TEST_DATABASE_URL=postgresql://postgres:postgres@localhost:5432/kairos_test?sslmode=disable
 ```
 
 ## Development

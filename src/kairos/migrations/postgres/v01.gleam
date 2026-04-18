@@ -1,29 +1,23 @@
-//// PostgreSQL schema definitions for Kairos persistence.
-
 import gleam/list
 import gleam/string
 import kairos/job
 
-pub const jobs_table = "kairos_jobs"
-
-pub const active_unique_key_constraint = "kairos_jobs_unique_key_active_idx"
-
-pub type Migration {
-  Migration(version: Int, name: String, statements: List(String))
+pub fn version() -> Int {
+  1
 }
 
-pub fn migrations() -> List(Migration) {
-  [initial_migration()]
+pub fn name() -> String {
+  "create_jobs_table"
 }
 
-pub fn initial_migration() -> Migration {
-  Migration(version: 1, name: "create_jobs_table", statements: [
+pub fn statements() -> List(String) {
+  [
     "CREATE EXTENSION IF NOT EXISTS pgcrypto",
     create_jobs_table_statement(),
     create_unique_key_index_statement(),
     create_updated_at_function_statement(),
     create_updated_at_trigger_statement(),
-  ])
+  ]
 }
 
 fn supported_states() -> List(String) {
@@ -45,7 +39,7 @@ fn active_unique_states() -> List(String) {
 }
 
 fn create_jobs_table_statement() -> String {
-  "CREATE TABLE " <> jobs_table <> " (
+  "CREATE TABLE kairos_jobs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     worker_name TEXT NOT NULL,
     payload TEXT NOT NULL,
@@ -80,8 +74,8 @@ fn create_jobs_table_statement() -> String {
 }
 
 fn create_unique_key_index_statement() -> String {
-  "CREATE UNIQUE INDEX " <> active_unique_key_constraint <> "
-  ON " <> jobs_table <> " (unique_key)
+  "CREATE UNIQUE INDEX kairos_jobs_unique_key_active_idx
+  ON kairos_jobs (unique_key)
   WHERE unique_key IS NOT NULL
     AND state IN (" <> quoted_csv(active_unique_states()) <> ")"
 }
@@ -98,7 +92,7 @@ fn create_updated_at_function_statement() -> String {
 
 fn create_updated_at_trigger_statement() -> String {
   "CREATE TRIGGER kairos_jobs_set_updated_at
-  BEFORE UPDATE ON " <> jobs_table <> "
+  BEFORE UPDATE ON kairos_jobs
   FOR EACH ROW
   EXECUTE FUNCTION kairos_touch_updated_at()"
 }

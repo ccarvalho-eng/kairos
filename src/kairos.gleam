@@ -1,7 +1,7 @@
 import gleam/otp/actor
 import gleam/otp/supervision.{type ChildSpecification}
 import kairos/config
-import kairos/runtime
+import kairos/supervision as kairos_supervision
 
 pub fn package_name() -> String {
   "kairos"
@@ -9,10 +9,12 @@ pub fn package_name() -> String {
 
 pub fn start(
   config: config.Config,
-) -> Result(actor.Started(runtime.Runtime), actor.StartError) {
-  runtime.start(config: config)
+) -> Result(actor.Started(kairos_supervision.Runtime), actor.StartError) {
+  kairos_supervision.start(config: config)
 }
 
-pub fn supervised(config: config.Config) -> ChildSpecification(runtime.Runtime) {
-  runtime.supervised(config: config)
+pub fn supervised(
+  config: config.Config,
+) -> ChildSpecification(kairos_supervision.Runtime) {
+  kairos_supervision.supervised(config: config)
 }
