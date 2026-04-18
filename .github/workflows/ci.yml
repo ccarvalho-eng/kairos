@@ -72,6 +72,7 @@ jobs:
         with:
           gleam-version: ${{ env.GLEAM_VERSION }}
           otp-version: ${{ matrix.otp }}
+          rebar3-version: "3"
 
       - name: Cache Gleam and rebar artifacts
         uses: actions/cache@v4
