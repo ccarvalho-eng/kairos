@@ -1,8 +1,10 @@
 import gleam/erlang/process
+import gleam/int
 import gleam/list
 import gleam/otp/actor
 import gleam/otp/factory_supervisor
 import gleam/result
+import gleam/string
 import gleam/time/timestamp
 import kairos/config
 import kairos/job_runner
@@ -10,11 +12,13 @@ import kairos/postgres/job_store
 import kairos/queue
 import kairos/queue_poller
 import kairos/supervision
+import pog
 
 pub type DispatchError {
   QueueRuntimeUnavailable(String)
   ClaimFailed(job_store.StoreError)
   RunnerStartFailed(actor.StartError)
+  ReleaseClaimedFailed(actor.StartError, job_store.StoreError)
 }
 
 pub fn dispatch(
@@ -53,18 +57,63 @@ fn start_claimed_jobs(
   case claimed_jobs {
     [] -> Ok(list.reverse(started_pids))
     [claimed_job, ..rest] -> {
-      let start_result =
+      case
         factory_supervisor.start_child(
           runner_supervisor,
           job_runner.RunnerArg(config:, job: claimed_job, now: now),
         )
-        |> result.map_error(RunnerStartFailed)
+      {
+        Ok(started) ->
+          start_claimed_jobs(runner_supervisor, config, rest, now, [
+            started.pid,
+            ..started_pids
+          ])
 
-      use started <- result.try(start_result)
-      start_claimed_jobs(runner_supervisor, config, rest, now, [
-        started.pid,
-        ..started_pids
-      ])
+        Error(start_error) ->
+          case
+            release_claimed_jobs(
+              config.connection(config),
+              [claimed_job, ..rest],
+              now,
+              start_error,
+            )
+          {
+            Ok(Nil) -> Error(RunnerStartFailed(start_error))
+            Error(cleanup_error) ->
+              Error(ReleaseClaimedFailed(start_error, cleanup_error))
+          }
+      }
     }
   }
+}
+
+fn release_claimed_jobs(
+  connection: pog.Connection,
+  claimed_jobs: List(job_store.PersistedJob),
+  now: timestamp.Timestamp,
+  start_error: actor.StartError,
+) -> Result(Nil, job_store.StoreError) {
+  case claimed_jobs {
+    [] -> Ok(Nil)
+    [claimed_job, ..rest] -> {
+      let job_store.PersistedJob(id:, attempt:, ..) = claimed_job
+      use _ <- result.try(job_store.retry(
+        connection,
+        id,
+        job_runner.retry_scheduled_at(claimed_job, now),
+        format_dispatch_failure(attempt, start_error),
+      ))
+      release_claimed_jobs(connection, rest, now, start_error)
+    }
+  }
+}
+
+fn format_dispatch_failure(
+  attempt: Int,
+  start_error: actor.StartError,
+) -> String {
+  "kind=runner_start attempt="
+  <> int.to_string(attempt)
+  <> " reason="
+  <> string.replace(string.inspect(start_error), "\n", " ")
 }

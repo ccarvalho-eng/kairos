@@ -46,6 +46,20 @@ pub fn config_rejects_duplicate_worker_names_test() {
     ])
 }
 
+pub fn config_accepts_distinct_worker_names_test() {
+  let connection = test_connection()
+  let assert Ok(default_queue) =
+    queue.new(name: "default", concurrency: 10, poll_interval_ms: 1000)
+  let worker_one = worker.register(example_worker("mailers.email"))
+  let worker_two = worker.register(example_worker("mailers.digest"))
+
+  let assert Ok(_) =
+    config.new(connection: connection, queues: [default_queue], workers: [
+      worker_one,
+      worker_two,
+    ])
+}
+
 fn test_connection() -> pog.Connection {
   pog.named_connection(process.new_name("kairos-test-pool"))
 }

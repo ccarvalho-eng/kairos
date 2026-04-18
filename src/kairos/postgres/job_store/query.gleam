@@ -92,6 +92,7 @@ pub fn complete() -> String {
     state = 'completed',
     completed_at = $2
   WHERE id = $1
+    AND state = 'executing'
   " <> returned_columns("kairos_jobs")
 }
 
@@ -104,6 +105,7 @@ pub fn retry() -> String {
     scheduled_at = $2,
     errors = array_append(kairos_jobs.errors, $3::TEXT)
   WHERE id = $1
+    AND state = 'executing'
   " <> returned_columns("kairos_jobs")
 }
 
@@ -116,6 +118,7 @@ pub fn discard() -> String {
     discarded_at = $2,
     errors = array_append(kairos_jobs.errors, $3::TEXT)
   WHERE id = $1
+    AND state = 'executing'
   " <> returned_columns("kairos_jobs")
 }
 
@@ -128,6 +131,7 @@ pub fn cancel() -> String {
     cancelled_at = $2,
     errors = array_append(kairos_jobs.errors, $3::TEXT)
   WHERE id = $1
+    AND state = 'executing'
   " <> returned_columns("kairos_jobs")
 }
 

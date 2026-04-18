@@ -1,3 +1,4 @@
+import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
 import gleam/time/timestamp
@@ -57,9 +58,20 @@ pub fn run_claimed_persists_retry_discard_and_cancel_outcomes_test() {
     let kairos_config =
       build_config(connection, [worker.register(retry_contract)])
     let retried = enqueue_and_run_claimed(kairos_config, retry_contract, now)
-    let expected_now = test_db.to_postgres_precision(now)
+    let job_store.PersistedJob(id: retried_id, ..) = retried
+    let assert Ok(Some(stored_retried)) =
+      job_store.fetch(connection, retried_id)
+    let expected_retry_at =
+      retried
+      |> job_runner.retry_scheduled_at(now)
+      |> test_db.to_postgres_precision
 
-    assert_retryable(retried, expected_now, "kind=retry", "retry later")
+    assert_retryable(
+      stored_retried,
+      expected_retry_at,
+      "kind=retry",
+      "retry later",
+    )
   })
 }
 
@@ -72,9 +84,12 @@ pub fn run_claimed_persists_discard_outcome_test() {
       build_config(connection, [worker.register(discard_contract)])
     let discarded =
       enqueue_and_run_claimed(kairos_config, discard_contract, now)
+    let job_store.PersistedJob(id: discarded_id, ..) = discarded
+    let assert Ok(Some(stored_discarded)) =
+      job_store.fetch(connection, discarded_id)
 
     let expected_now = test_db.to_postgres_precision(now)
-    assert_discarded(discarded, expected_now, "discard permanently")
+    assert_discarded(stored_discarded, expected_now, "discard permanently")
   })
 }
 
@@ -86,9 +101,12 @@ pub fn run_claimed_persists_cancel_outcome_test() {
     let kairos_config =
       build_config(connection, [worker.register(cancel_contract)])
     let cancelled = enqueue_and_run_claimed(kairos_config, cancel_contract, now)
+    let job_store.PersistedJob(id: cancelled_id, ..) = cancelled
+    let assert Ok(Some(stored_cancelled)) =
+      job_store.fetch(connection, cancelled_id)
 
     let expected_now = test_db.to_postgres_precision(now)
-    assert_cancelled(cancelled, expected_now, "cancel execution")
+    assert_cancelled(stored_cancelled, expected_now, "cancel execution")
   })
 }
 
@@ -120,11 +138,21 @@ pub fn run_claimed_discards_decode_failures_and_missing_workers_test() {
 
     let decode_failed = run_claimed(kairos_config, malformed_job, now)
     let missing_worker = run_claimed(kairos_config, missing_worker_job, now)
+    let job_store.PersistedJob(id: decode_failed_id, ..) = decode_failed
+    let job_store.PersistedJob(id: missing_worker_id, ..) = missing_worker
+    let assert Ok(Some(stored_decode_failed)) =
+      job_store.fetch(connection, decode_failed_id)
+    let assert Ok(Some(stored_missing_worker)) =
+      job_store.fetch(connection, missing_worker_id)
 
     let expected_now = test_db.to_postgres_precision(now)
 
-    assert_discarded(decode_failed, expected_now, "payload mismatch")
-    assert_discarded(missing_worker, expected_now, "worker not configured")
+    assert_discarded(stored_decode_failed, expected_now, "payload mismatch")
+    assert_discarded(
+      stored_missing_worker,
+      expected_now,
+      "worker not configured",
+    )
   })
 }
 
@@ -151,11 +179,66 @@ pub fn run_claimed_records_crashes_and_exhausted_retries_as_discarded_test() {
 
     let crashed = run_claimed(kairos_config, crashing_job, now)
     let exhausted = run_claimed(kairos_config, exhausted_job, now)
+    let job_store.PersistedJob(id: crashed_id, ..) = crashed
+    let job_store.PersistedJob(id: exhausted_id, ..) = exhausted
+    let assert Ok(Some(stored_crashed)) =
+      job_store.fetch(connection, crashed_id)
+    let assert Ok(Some(stored_exhausted)) =
+      job_store.fetch(connection, exhausted_id)
 
     let expected_now = test_db.to_postgres_precision(now)
+    let expected_retry_at =
+      crashed
+      |> job_runner.retry_scheduled_at(now)
+      |> test_db.to_postgres_precision
 
-    assert_retryable(crashed, expected_now, "kind=crash", "worker crashed")
-    assert_discarded(exhausted, expected_now, "retry later")
+    assert_retryable(
+      stored_crashed,
+      expected_retry_at,
+      "kind=crash",
+      "worker crashed",
+    )
+    assert_discarded(stored_exhausted, expected_now, "retry later")
+  })
+}
+
+pub fn run_claimed_appends_retry_history_test() {
+  test_db.with_database(fn(connection) {
+    let now = timestamp.system_time()
+    let retry_contract =
+      result_worker("workers.retry-history", worker.Retry("retry later"))
+    let kairos_config =
+      build_config(connection, [worker.register(retry_contract)])
+    let claimed_job =
+      insert_executing_job_with_errors(
+        connection,
+        worker_name: "workers.retry-history",
+        payload: "kairos",
+        max_attempts: 4,
+        attempt: 2,
+        attempted_at: now,
+        errors: ["kind=retry attempt=1 reason=prior failure"],
+      )
+
+    let retried = run_claimed(kairos_config, claimed_job, now)
+    let job_store.PersistedJob(id: retried_id, ..) = retried
+    let assert Ok(Some(stored_retried)) =
+      job_store.fetch(connection, retried_id)
+    let expected_retry_at =
+      retried
+      |> job_runner.retry_scheduled_at(now)
+      |> test_db.to_postgres_precision
+    let job_store.PersistedJob(errors: errors, ..) = stored_retried
+
+    assert_retryable(
+      stored_retried,
+      expected_retry_at,
+      "kind=retry",
+      "retry later",
+    )
+    let assert [prior_error, appended_error] = errors
+    assert string.contains(prior_error, "prior failure")
+    assert string.contains(appended_error, "retry later")
   })
 }
 
@@ -231,6 +314,26 @@ fn insert_executing_job(
   attempt attempt: Int,
   attempted_at attempted_at: timestamp.Timestamp,
 ) -> job_store.PersistedJob {
+  insert_executing_job_with_errors(
+    connection,
+    worker_name: worker_name,
+    payload: payload,
+    max_attempts: max_attempts,
+    attempt: attempt,
+    attempted_at: attempted_at,
+    errors: [],
+  )
+}
+
+fn insert_executing_job_with_errors(
+  connection: pog.Connection,
+  worker_name worker_name: String,
+  payload payload: String,
+  max_attempts max_attempts: Int,
+  attempt attempt: Int,
+  attempted_at attempted_at: timestamp.Timestamp,
+  errors errors: List(String),
+) -> job_store.PersistedJob {
   let assert Ok(inserted) =
     job_store.insert(
       connection,
@@ -243,7 +346,7 @@ fn insert_executing_job(
         attempt: attempt,
         max_attempts: max_attempts,
         unique_key: None,
-        errors: [],
+        errors: errors,
         scheduled_at: attempted_at,
         attempted_at: Some(attempted_at),
         completed_at: None,
@@ -256,7 +359,7 @@ fn insert_executing_job(
 
 fn assert_retryable(
   persisted_job: job_store.PersistedJob,
-  expected_now: timestamp.Timestamp,
+  expected_scheduled_at: timestamp.Timestamp,
   expected_kind: String,
   reason_substring: String,
 ) -> Nil {
@@ -268,8 +371,8 @@ fn assert_retryable(
   ) = persisted_job
 
   assert state == job.Retryable
-  assert scheduled_at == expected_now
-  let assert [error] = errors
+  assert scheduled_at == expected_scheduled_at
+  let assert [error, ..] = list.reverse(errors)
   assert string.contains(error, expected_kind)
   assert string.contains(error, reason_substring)
 }
