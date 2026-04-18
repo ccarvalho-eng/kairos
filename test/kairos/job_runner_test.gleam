@@ -2,9 +2,11 @@ import gleam/dynamic/decode
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
+import gleam/time/duration
 import gleam/time/timestamp
 import gleeunit
 import kairos
+import kairos/backoff
 import kairos/config
 import kairos/job
 import kairos/job_runner
@@ -64,8 +66,40 @@ pub fn run_claimed_persists_retry_discard_and_cancel_outcomes_test() {
     let assert Ok(Some(stored_retried)) =
       job_store.fetch(connection, retried_id)
     let expected_retry_at =
-      claimed
-      |> job_runner.retry_scheduled_at(now)
+      job_runner.retry_scheduled_at(
+        kairos_config,
+        claimed,
+        now,
+        "kind=retry attempt=1 reason=retry later",
+      )
+      |> test_db.to_postgres_precision
+
+    assert_retryable(
+      stored_retried,
+      expected_retry_at,
+      "kind=retry",
+      "retry later",
+    )
+  })
+}
+
+pub fn run_claimed_uses_worker_backoff_policy_test() {
+  test_db.with_database(fn(connection) {
+    let now = timestamp.system_time()
+    let retry_contract =
+      worker.with_backoff(
+        result_worker("workers.custom-retry", worker.Retry("retry later")),
+        backoff.custom_policy(fn(context) { backoff.attempt(context) * 60 }),
+      )
+    let kairos_config =
+      build_config(connection, [worker.register(retry_contract)])
+    let claimed = enqueue_and_claim(kairos_config, retry_contract, now)
+    let retried = run_claimed(kairos_config, claimed, now)
+    let job_store.PersistedJob(id: retried_id, ..) = retried
+    let assert Ok(Some(stored_retried)) =
+      job_store.fetch(connection, retried_id)
+    let expected_retry_at =
+      timestamp.add(now, duration.seconds(60))
       |> test_db.to_postgres_precision
 
     assert_retryable(
@@ -190,8 +224,12 @@ pub fn run_claimed_records_crashes_and_exhausted_retries_as_discarded_test() {
 
     let expected_now = test_db.to_postgres_precision(now)
     let expected_retry_at =
-      crashing_job
-      |> job_runner.retry_scheduled_at(now)
+      job_runner.retry_scheduled_at(
+        kairos_config,
+        crashing_job,
+        now,
+        "kind=crash attempt=1 reason=worker crashed",
+      )
       |> test_db.to_postgres_precision
 
     assert_retryable(
@@ -227,8 +265,12 @@ pub fn run_claimed_appends_retry_history_test() {
     let assert Ok(Some(stored_retried)) =
       job_store.fetch(connection, retried_id)
     let expected_retry_at =
-      claimed_job
-      |> job_runner.retry_scheduled_at(now)
+      job_runner.retry_scheduled_at(
+        kairos_config,
+        claimed_job,
+        now,
+        "kind=retry attempt=2 reason=retry later",
+      )
       |> test_db.to_postgres_precision
     let job_store.PersistedJob(errors: errors, ..) = stored_retried
 

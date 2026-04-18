@@ -102,8 +102,12 @@ pub fn dispatch_persists_retry_discard_and_cancel_outcomes_test() {
     let stored_cancelled = wait_for_job(connection, cancelled_id, 20)
 
     let expected_retry_at =
-      stored_retried
-      |> job_runner.retry_scheduled_at(now)
+      job_runner.retry_scheduled_at(
+        kairos_config,
+        stored_retried,
+        now,
+        "kind=retry attempt=1 reason=retry later",
+      )
       |> test_db.to_postgres_precision
     let expected_now = test_db.to_postgres_precision(now)
 
