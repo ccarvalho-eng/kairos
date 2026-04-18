@@ -71,7 +71,7 @@ fn map_dispatch_claimed_error(
   error: queue_dispatch.DispatchClaimedError,
 ) -> DispatchError {
   case error {
-    queue_dispatch.QueueRuntimeUnavailable(queue_name) ->
+    queue_dispatch.QueueRuntimeUnavailable(queue_name, _start_error) ->
       QueueRuntimeUnavailable(queue_name)
     queue_dispatch.RunnerStartFailed(start_error) ->
       RunnerStartFailed(start_error)

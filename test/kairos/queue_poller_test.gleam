@@ -161,6 +161,31 @@ pub fn poller_resumes_after_queue_supervisor_restart_test() {
   })
 }
 
+pub fn poller_does_not_dispatch_running_job_twice_test() {
+  test_db.with_database(fn(connection) {
+    let contract = slow_worker("workers.slow", 125)
+    let assert Ok(default_queue) =
+      queue.new(name: "default", concurrency: 1, poll_interval_ms: 25)
+    let assert Ok(kairos_config) =
+      config.new(connection: connection, queues: [default_queue], workers: [
+        worker.register(contract),
+      ])
+    let assert Ok(started) = kairos.start(kairos_config)
+
+    let assert Ok(enqueued) =
+      kairos.enqueue(kairos_config, contract, ExampleArgs(name: "slow"))
+    let job.EnqueuedJob(id:, ..) = enqueued
+
+    let completed = wait_for_completed_job(connection, id, 120)
+    let job_store.PersistedJob(state:, attempt:, ..) = completed
+
+    assert state == job.Completed
+    assert attempt == 1
+
+    stop_process(started.pid)
+  })
+}
+
 fn success_worker(name: String) -> worker.Worker(ExampleArgs) {
   worker.new(
     name,
@@ -170,6 +195,22 @@ fn success_worker(name: String) -> worker.Worker(ExampleArgs) {
     },
     fn(payload) { Ok(ExampleArgs(name: payload)) },
     fn(_args) { worker.Success },
+    job.default_enqueue_options(),
+  )
+}
+
+fn slow_worker(name: String, duration_ms: Int) -> worker.Worker(ExampleArgs) {
+  worker.new(
+    name,
+    fn(args) {
+      let ExampleArgs(name:) = args
+      name
+    },
+    fn(payload) { Ok(ExampleArgs(name: payload)) },
+    fn(_args) {
+      process.sleep(duration_ms)
+      worker.Success
+    },
     job.default_enqueue_options(),
   )
 }
@@ -217,6 +258,10 @@ fn wait_for_completed_job(
 
   case state, remaining_attempts {
     job.Completed, _ -> stored
+    job.Discarded, _ ->
+      panic as { "job " <> id <> " was discarded while waiting for completion" }
+    job.Cancelled, _ ->
+      panic as { "job " <> id <> " was cancelled while waiting for completion" }
     _, 0 -> panic as { "timed out waiting for job " <> id <> " to complete" }
     _, _ -> {
       process.sleep(25)

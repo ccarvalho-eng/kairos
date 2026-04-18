@@ -1,3 +1,4 @@
+import exception
 import gleam/erlang/process
 import gleam/int
 import gleam/list
@@ -12,7 +13,7 @@ import kairos/postgres/job_store
 import pog
 
 pub type DispatchClaimedError {
-  QueueRuntimeUnavailable(String)
+  QueueRuntimeUnavailable(String, actor.StartError)
   RunnerStartFailed(actor.StartError)
   ReleaseClaimedFailed(actor.StartError, job_store.StoreError)
 }
@@ -50,21 +51,32 @@ fn start_claimed_jobs(
   case claimed_jobs {
     [] -> Ok(list.reverse(started_pids))
     [claimed_job, ..rest] -> {
-      case
-        factory_supervisor.start_child(
-          runner_supervisor,
-          job_runner.RunnerArg(config:, job: claimed_job, now: now),
-        )
-      {
+      case start_claimed_job(runner_supervisor, config, claimed_job, now) {
         Ok(started) ->
           start_claimed_jobs(runner_supervisor, config, queue_name, rest, now, [
             started.pid,
             ..started_pids
           ])
 
-        Error(start_error) ->
+        Error(start_error) -> {
+          let unstarted_jobs = [claimed_job, ..rest]
+
           case started_pids, supervisor_unavailable(start_error) {
-            [], True -> Error(QueueRuntimeUnavailable(queue_name))
+            [], True ->
+              case
+                release_claimed_jobs(
+                  config,
+                  config.connection(config),
+                  unstarted_jobs,
+                  now,
+                  start_error,
+                )
+              {
+                Ok(Nil) ->
+                  Error(QueueRuntimeUnavailable(queue_name, start_error))
+                Error(cleanup_error) ->
+                  Error(ReleaseClaimedFailed(start_error, cleanup_error))
+              }
             _, _ ->
               // Keep already-started runners alive and only release the
               // unstarted tail back into the queue.
@@ -72,7 +84,7 @@ fn start_claimed_jobs(
                 release_claimed_jobs(
                   config,
                   config.connection(config),
-                  [claimed_job, ..rest],
+                  unstarted_jobs,
                   now,
                   start_error,
                 )
@@ -82,8 +94,33 @@ fn start_claimed_jobs(
                   Error(ReleaseClaimedFailed(start_error, cleanup_error))
               }
           }
+        }
       }
     }
+  }
+}
+
+fn start_claimed_job(
+  runner_supervisor: factory_supervisor.Supervisor(job_runner.RunnerArg, String),
+  config: config.Config,
+  claimed_job: job_store.PersistedJob,
+  now: timestamp.Timestamp,
+) -> Result(actor.Started(String), actor.StartError) {
+  case
+    exception.rescue(fn() {
+      factory_supervisor.start_child(
+        runner_supervisor,
+        job_runner.RunnerArg(config:, job: claimed_job, now: now),
+      )
+    })
+  {
+    Ok(start_result) -> start_result
+    Error(exception.Exited(reason)) ->
+      Error(actor.InitExited(process.Abnormal(reason)))
+    Error(exception.Errored(reason)) ->
+      Error(actor.InitFailed("errored: " <> string.inspect(reason)))
+    Error(exception.Thrown(reason)) ->
+      Error(actor.InitFailed("thrown: " <> string.inspect(reason)))
   }
 }
 
@@ -125,7 +162,7 @@ fn supervisor_unavailable(start_error: actor.StartError) -> Bool {
     // This relies on the BEAM's noproc formatting. A false negative is safe
     // here because the fallback path still attempts to release claimed jobs.
     actor.InitExited(process.Abnormal(reason)) ->
-      string.contains(string.inspect(reason), "noproc")
+      string.contains(string.lowercase(string.inspect(reason)), "noproc")
     _ -> False
   }
 }
