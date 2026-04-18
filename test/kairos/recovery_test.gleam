@@ -199,6 +199,8 @@ pub fn recover_stale_ignores_non_positive_stale_window_test() {
         now,
         duration.milliseconds(0),
       )
+    let assert Ok(0) =
+      kairos.recover_stale(started.data, "default", now, duration.minutes(-1))
 
     let job_store.PersistedJob(id:, ..) = stale_job
     let assert Ok(Some(stored_job)) = job_store.fetch(connection, id)
@@ -208,6 +210,28 @@ pub fn recover_stale_ignores_non_positive_stale_window_test() {
     assert attempted_at
       == Some(test_db.to_postgres_precision(stale_attempted_at))
     assert list.is_empty(errors)
+
+    process.send_exit(started.pid)
+  })
+}
+
+pub fn recover_stale_returns_error_for_unknown_queue_test() {
+  test_db.with_database(fn(connection) {
+    let assert Ok(default_queue) =
+      queue.new(name: "default", concurrency: 5, poll_interval_ms: 1000)
+    let assert Ok(kairos_config) =
+      config.new(connection: connection, queues: [default_queue], workers: [])
+    let assert Ok(started) = kairos.start(kairos_config)
+
+    let result =
+      kairos.recover_stale(
+        started.data,
+        "missing",
+        timestamp.system_time(),
+        duration.minutes(5),
+      )
+
+    assert result == Error(kairos.QueueRuntimeUnavailable("missing"))
 
     process.send_exit(started.pid)
   })
