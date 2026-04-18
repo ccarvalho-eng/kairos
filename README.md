@@ -1,6 +1,6 @@
 # Kairos
 
-Kairos is a durable background job library for Gleam on the BEAM.
+Kairos is a background job runner for Gleam on the BEAM with typed worker contracts, PostgreSQL-backed persistence, and explicit queue configuration.
 
 Kairos is in early `0.x` development. The package API and supervision behavior are still being established.
 
@@ -15,6 +15,8 @@ gleam add kairos
 ```
 
 ## Setup
+
+Kairos runs inside the consuming application, so the host app should own environment loading and pool supervision.
 
 Kairos exposes migrations through `kairos/migration`.
 Apply `migration.migrations()` with your existing migration runner, start your PostgreSQL pool, build a `config.Config`, and start Kairos in your supervision tree.
