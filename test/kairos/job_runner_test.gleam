@@ -1,3 +1,4 @@
+import gleam/dynamic/decode
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
@@ -242,6 +243,46 @@ pub fn run_claimed_appends_retry_history_test() {
   })
 }
 
+pub fn run_claimed_does_not_requeue_completed_jobs_when_persist_fails_test() {
+  test_db.with_database(fn(connection) {
+    let now = timestamp.system_time()
+    let contract = result_worker("workers.success", worker.Success)
+    let kairos_config = build_config(connection, [worker.register(contract)])
+    let claimed = enqueue_and_claim(kairos_config, contract, now)
+    let job_store.PersistedJob(id:, ..) = claimed
+
+    let assert Ok(_) =
+      pog.query("ALTER TABLE kairos_jobs DROP COLUMN completed_at")
+      |> pog.execute(connection)
+
+    let assert Error(job_store.QueryFailed(_)) =
+      job_runner.run_claimed(kairos_config, claimed, now)
+
+    assert job_state(connection, id) == "executing"
+  })
+}
+
+pub fn run_claimed_does_not_requeue_exhausted_jobs_when_discard_fails_test() {
+  test_db.with_database(fn(connection) {
+    let now = timestamp.system_time()
+    let contract =
+      result_worker("workers.exhausted", worker.Retry("retry later"))
+    let kairos_config = build_config(connection, [worker.register(contract)])
+    let claimed =
+      enqueue_and_claim_with_attempts(kairos_config, contract, 1, now)
+    let job_store.PersistedJob(id:, ..) = claimed
+
+    let assert Ok(_) =
+      pog.query("ALTER TABLE kairos_jobs DROP COLUMN discarded_at")
+      |> pog.execute(connection)
+
+    let assert Error(job_store.QueryFailed(_)) =
+      job_runner.run_claimed(kairos_config, claimed, now)
+
+    assert job_state(connection, id) == "executing"
+  })
+}
+
 fn build_config(
   connection: pog.Connection,
   registered_workers: List(worker.RegisteredWorker),
@@ -411,6 +452,21 @@ fn assert_cancelled(
   assert cancelled_at == Some(expected_now)
   let assert [error] = errors
   assert string.contains(error, reason_substring)
+}
+
+fn job_state(connection: pog.Connection, id: String) -> String {
+  let decoder = {
+    use state <- decode.field(0, decode.string)
+    decode.success(state)
+  }
+
+  let assert Ok(pog.Returned(rows: [state], ..)) =
+    pog.query("SELECT state FROM kairos_jobs WHERE id = $1")
+    |> pog.parameter(pog.text(id))
+    |> pog.returning(decoder)
+    |> pog.execute(connection)
+
+  state
 }
 
 fn result_worker(

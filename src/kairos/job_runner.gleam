@@ -147,7 +147,13 @@ fn persist_or_recover_transition(
   case persist_transition(connection, claimed_job, now, transition) {
     Ok(persisted_job) -> Ok(persisted_job)
     Error(error) ->
-      recover_transition_failure(connection, claimed_job, now, error)
+      recover_transition_failure(
+        connection,
+        claimed_job,
+        now,
+        transition,
+        error,
+      )
   }
 }
 
@@ -155,18 +161,27 @@ fn recover_transition_failure(
   connection: pog.Connection,
   claimed_job: job_store.PersistedJob,
   now: timestamp.Timestamp,
+  transition: LifecycleTransition,
   error: job_store.StoreError,
 ) -> Result(job_store.PersistedJob, job_store.StoreError) {
-  let job_store.PersistedJob(id:, attempt:, ..) = claimed_job
+  let job_store.PersistedJob(id:, attempt:, max_attempts:, ..) = claimed_job
   let recovery_error =
     format_failure("persistence", attempt, string.inspect(error))
 
-  job_store.retry(
-    connection,
-    id,
-    retry_scheduled_at(claimed_job, now),
-    recovery_error,
-  )
+  case transition {
+    MarkRetryable(_) ->
+      case attempt < max_attempts {
+        True ->
+          job_store.retry(
+            connection,
+            id,
+            retry_scheduled_at(claimed_job, now),
+            recovery_error,
+          )
+        False -> Error(error)
+      }
+    _ -> Error(error)
+  }
 }
 
 @internal
