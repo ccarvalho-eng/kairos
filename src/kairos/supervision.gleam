@@ -48,12 +48,11 @@ pub fn start(
     |> list.fold(
       static_supervisor.new(static_supervisor.OneForOne),
       fn(builder, pair) {
-        let #(runtime_for_queue, queue_definition) = pair
+        let #(runtime_for_queue, _) = pair
         builder
         |> static_supervisor.add(queue_supervisor.supervised(
           config: config,
           runtime: runtime_for_queue,
-          queue_definition: queue_definition,
         ))
       },
     )
@@ -132,6 +131,7 @@ pub fn queue_poller_pid(
   queue_runtime.poller_pid(runtime_for_queue)
 }
 
+@internal
 pub fn queue_reaper_pid(
   runtime: Runtime,
   queue_name: String,

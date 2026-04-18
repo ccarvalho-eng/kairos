@@ -4,7 +4,6 @@ import gleam/otp/static_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
 import kairos/config
 import kairos/job_runner
-import kairos/queue
 import kairos/queue_reaper
 import kairos/supervision/queue_runtime
 import kairos/supervision/registered_supervisor
@@ -14,9 +13,7 @@ import kairos/supervision/stub_actor
 pub fn start(
   config config: config.Config,
   runtime runtime: queue_runtime.QueueRuntime,
-  queue_definition queue_definition: queue.Queue,
 ) -> Result(actor.Started(queue_runtime.QueueRuntime), actor.StartError) {
-  let queue_name = queue.name(queue_definition)
   let builder =
     static_supervisor.new(static_supervisor.OneForAll)
     |> static_supervisor.add(
@@ -30,7 +27,7 @@ pub fn start(
     |> static_supervisor.add(queue_reaper.supervised(
       name: queue_runtime.reaper_name(runtime),
       config: config,
-      queue_name: queue_name,
+      queue_name: queue_runtime.name(runtime),
     ))
 
   case
@@ -49,9 +46,6 @@ pub fn start(
 pub fn supervised(
   config config: config.Config,
   runtime runtime: queue_runtime.QueueRuntime,
-  queue_definition queue_definition: queue.Queue,
 ) -> ChildSpecification(queue_runtime.QueueRuntime) {
-  supervision.supervisor(fn() {
-    start(config: config, runtime: runtime, queue_definition: queue_definition)
-  })
+  supervision.supervisor(fn() { start(config: config, runtime: runtime) })
 }

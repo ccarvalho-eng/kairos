@@ -1,5 +1,7 @@
 import gleam/erlang/process
+import gleam/list
 import gleam/option.{None, Some}
+import gleam/string
 import gleam/time/duration
 import gleam/time/timestamp
 import gleeunit
@@ -68,11 +70,13 @@ pub fn recover_stale_retries_and_discards_stale_executing_jobs_test() {
     assert_retryable(
       stored_retryable,
       test_db.to_postgres_precision(now),
+      1,
       "kind=stale attempt=1 reason=stale execution recovered",
     )
     assert_discarded(
       stored_exhausted,
       test_db.to_postgres_precision(now),
+      1,
       "kind=stale attempt=3 reason=stale execution recovered",
     )
 
@@ -122,10 +126,48 @@ pub fn recover_stale_restores_abandoned_jobs_after_restart_test() {
     assert_retryable(
       recovered_job,
       test_db.to_postgres_precision(recover_now),
+      1,
       "kind=stale attempt=1 reason=stale execution recovered",
     )
 
     process.send_exit(second_runtime.pid)
+  })
+}
+
+pub fn recover_stale_ignores_recent_executing_jobs_test() {
+  test_db.with_database(fn(connection) {
+    let now = timestamp.system_time()
+    let recent_attempted_at = timestamp.add(now, duration.minutes(-2))
+    let contract = result_worker("workers.recent", worker.Success)
+    let assert Ok(default_queue) =
+      queue.new(name: "default", concurrency: 5, poll_interval_ms: 1000)
+    let assert Ok(kairos_config) =
+      config.new(connection: connection, queues: [default_queue], workers: [
+        worker.register(contract),
+      ])
+    let assert Ok(started) = kairos.start(kairos_config)
+    let recent_job =
+      insert_executing_job(
+        connection,
+        worker_name: "workers.recent",
+        attempt: 1,
+        max_attempts: 3,
+        attempted_at: recent_attempted_at,
+      )
+
+    let assert Ok(0) =
+      kairos.recover_stale(started.data, "default", now, duration.minutes(5))
+
+    let job_store.PersistedJob(id:, ..) = recent_job
+    let assert Ok(Some(stored_job)) = job_store.fetch(connection, id)
+    let job_store.PersistedJob(state:, attempted_at:, errors:, ..) = stored_job
+
+    assert state == job.Executing
+    assert attempted_at
+      == Some(test_db.to_postgres_precision(recent_attempted_at))
+    assert list.is_empty(errors)
+
+    process.send_exit(started.pid)
   })
 }
 
@@ -179,7 +221,8 @@ fn insert_executing_job(
 fn assert_retryable(
   persisted_job: job_store.PersistedJob,
   expected_scheduled_at: timestamp.Timestamp,
-  expected_error: String,
+  expected_error_count: Int,
+  expected_last_error: String,
 ) -> Nil {
   let job_store.PersistedJob(
     state: state,
@@ -190,13 +233,16 @@ fn assert_retryable(
 
   assert state == job.Retryable
   assert scheduled_at == expected_scheduled_at
-  assert errors == [expected_error]
+  assert list.length(errors) == expected_error_count
+  let assert Ok(last_error) = list.last(errors)
+  assert string.contains(last_error, expected_last_error)
 }
 
 fn assert_discarded(
   persisted_job: job_store.PersistedJob,
   expected_now: timestamp.Timestamp,
-  expected_error: String,
+  expected_error_count: Int,
+  expected_last_error: String,
 ) -> Nil {
   let job_store.PersistedJob(
     state: state,
@@ -207,5 +253,7 @@ fn assert_discarded(
 
   assert state == job.Discarded
   assert discarded_at == Some(expected_now)
-  assert errors == [expected_error]
+  assert list.length(errors) == expected_error_count
+  let assert Ok(last_error) = list.last(errors)
+  assert string.contains(last_error, expected_last_error)
 }

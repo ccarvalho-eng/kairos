@@ -11,6 +11,8 @@ import pog
 
 const recovery_batch_size = 100
 
+const recovery_timeout_ms = 15_000
+
 pub type Message {
   Recover(
     now: timestamp.Timestamp,
@@ -55,7 +57,7 @@ pub fn recover(
 ) -> Result(Int, job_store.StoreError) {
   actor.call(
     process.named_subject(name),
-    waiting: 5000,
+    waiting: recovery_timeout_ms,
     sending: fn(reply_with) {
       Recover(now: now, stale_for: stale_for, reply_with: reply_with)
     },
@@ -76,21 +78,22 @@ fn recover_stale_jobs(
   now: timestamp.Timestamp,
   stale_for: duration.Duration,
 ) -> Result(Int, job_store.StoreError) {
-  recover_stale_jobs_in_batches(state, now, stale_for, 0)
-}
-
-fn recover_stale_jobs_in_batches(
-  state: State,
-  now: timestamp.Timestamp,
-  stale_for: duration.Duration,
-  recovered_count: Int,
-) -> Result(Int, job_store.StoreError) {
-  let State(config:, queue_name:) = state
   let attempted_before =
     timestamp.add(
       now,
       duration.milliseconds(-duration.to_milliseconds(stale_for)),
     )
+
+  recover_stale_jobs_in_batches(state, now, attempted_before, 0)
+}
+
+fn recover_stale_jobs_in_batches(
+  state: State,
+  now: timestamp.Timestamp,
+  attempted_before: timestamp.Timestamp,
+  recovered_count: Int,
+) -> Result(Int, job_store.StoreError) {
+  let State(config:, queue_name:) = state
 
   let recovered_in_batch =
     pog.transaction(config.connection(config), fn(connection) {
@@ -113,7 +116,7 @@ fn recover_stale_jobs_in_batches(
       recover_stale_jobs_in_batches(
         state,
         now,
-        stale_for,
+        attempted_before,
         recovered_count + recovered_in_batch,
       )
   }

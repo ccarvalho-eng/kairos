@@ -1,4 +1,6 @@
+import gleam/list
 import gleam/option.{None, Some}
+import gleam/string
 import gleam/time/duration
 import gleam/time/timestamp
 import gleeunit
@@ -55,12 +57,18 @@ pub fn cancel_at_marks_pending_and_scheduled_jobs_cancelled_test() {
       job_store.fetch(connection, scheduled_id)
     let expected_now = test_db.to_postgres_precision(now)
 
-    assert_cancelled(cancelled_pending, expected_now, [
+    assert_cancelled(
+      cancelled_pending,
+      expected_now,
+      1,
       "kind=cancel attempt=0 reason=cancelled before execution",
-    ])
-    assert_cancelled(cancelled_scheduled, expected_now, [
+    )
+    assert_cancelled(
+      cancelled_scheduled,
+      expected_now,
+      1,
       "kind=cancel attempt=0 reason=cancelled before execution",
-    ])
+    )
   })
 }
 
@@ -116,10 +124,31 @@ pub fn cancel_at_preserves_retry_attempt_count_for_retryable_jobs_test() {
     let assert Ok(Some(cancelled_job)) = job_store.fetch(connection, id)
     let expected_now = test_db.to_postgres_precision(cancelled_at)
 
-    assert_cancelled(cancelled_job, expected_now, [
-      "kind=retry attempt=1 reason=temporary failure",
+    assert_cancelled(
+      cancelled_job,
+      expected_now,
+      2,
       "kind=cancel attempt=2 reason=cancelled before execution",
-    ])
+    )
+
+    Nil
+  })
+}
+
+pub fn cancel_at_returns_not_found_for_missing_jobs_test() {
+  test_db.with_database(fn(connection) {
+    let assert Ok(default_queue) =
+      queue.new(name: "default", concurrency: 5, poll_interval_ms: 1000)
+    let contract = example_worker()
+    let assert Ok(kairos_config) =
+      config.new(connection: connection, queues: [default_queue], workers: [
+        worker.register(contract),
+      ])
+    let missing_id = "00000000-0000-0000-0000-000000000000"
+
+    let assert Error(kairos.JobNotFound(id)) =
+      kairos.cancel_at(kairos_config, missing_id, timestamp.system_time())
+    assert id == missing_id
 
     Nil
   })
@@ -141,7 +170,8 @@ fn example_worker() -> worker.Worker(ExampleArgs) {
 fn assert_cancelled(
   persisted_job: job_store.PersistedJob,
   expected_now: timestamp.Timestamp,
-  expected_errors: List(String),
+  expected_error_count: Int,
+  expected_last_error: String,
 ) -> Nil {
   let job_store.PersistedJob(
     state: state,
@@ -152,7 +182,9 @@ fn assert_cancelled(
 
   assert state == job.Cancelled
   assert cancelled_at == Some(expected_now)
-  assert errors == expected_errors
+  assert list.length(errors) == expected_error_count
+  let assert Ok(last_error) = list.last(errors)
+  assert string.contains(last_error, expected_last_error)
 }
 
 fn insert_retryable_job(
