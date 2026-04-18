@@ -4,10 +4,10 @@ import gleam/otp/static_supervisor
 import gleam/otp/supervision.{type ChildSpecification}
 import kairos/config
 import kairos/job_runner
+import kairos/queue_poller
 import kairos/queue_reaper
 import kairos/supervision/queue_runtime
 import kairos/supervision/registered_supervisor
-import kairos/supervision/stub_actor
 
 @internal
 pub fn start(
@@ -21,9 +21,14 @@ pub fn start(
       |> factory_supervisor.named(queue_runtime.runner_supervisor_name(runtime))
       |> factory_supervisor.supervised,
     )
-    |> static_supervisor.add(
-      stub_actor.supervised(name: queue_runtime.poller_name(runtime)),
-    )
+    |> static_supervisor.add(queue_poller.supervised(
+      name: queue_runtime.poller_name(runtime),
+      config: config,
+      queue_name: queue_runtime.name(runtime),
+      concurrency: queue_runtime.concurrency(runtime),
+      poll_interval_ms: queue_runtime.poll_interval_ms(runtime),
+      runner_supervisor_name: queue_runtime.runner_supervisor_name(runtime),
+    ))
     |> static_supervisor.add(queue_reaper.supervised(
       name: queue_runtime.reaper_name(runtime),
       config: config,

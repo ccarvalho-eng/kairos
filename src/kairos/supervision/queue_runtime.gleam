@@ -2,17 +2,20 @@ import gleam/erlang/process
 import gleam/otp/factory_supervisor
 import kairos/job_runner
 import kairos/queue
+import kairos/queue_poller
 import kairos/queue_reaper
 import kairos/supervision/name
 
 pub opaque type QueueRuntime {
   QueueRuntime(
     name: String,
+    concurrency: Int,
+    poll_interval_ms: Int,
     supervisor_name: process.Name(Nil),
     runner_supervisor_name: process.Name(
       factory_supervisor.Message(job_runner.RunnerArg, String),
     ),
-    poller_name: process.Name(Nil),
+    poller_name: process.Name(queue_poller.Message),
     reaper_name: process.Name(queue_reaper.Message),
   )
 }
@@ -23,6 +26,8 @@ pub fn from_queue(queue_definition: queue.Queue) -> QueueRuntime {
 
   QueueRuntime(
     name: queue_name,
+    concurrency: queue.concurrency(queue_definition),
+    poll_interval_ms: queue.poll_interval_ms(queue_definition),
     supervisor_name: name.queue_supervisor(queue_name),
     runner_supervisor_name: name.queue_runner_supervisor(queue_name),
     poller_name: name.queue_poller(queue_name),
@@ -33,6 +38,18 @@ pub fn from_queue(queue_definition: queue.Queue) -> QueueRuntime {
 pub fn name(runtime: QueueRuntime) -> String {
   let QueueRuntime(name:, ..) = runtime
   name
+}
+
+@internal
+pub fn concurrency(runtime: QueueRuntime) -> Int {
+  let QueueRuntime(concurrency:, ..) = runtime
+  concurrency
+}
+
+@internal
+pub fn poll_interval_ms(runtime: QueueRuntime) -> Int {
+  let QueueRuntime(poll_interval_ms:, ..) = runtime
+  poll_interval_ms
 }
 
 @internal
@@ -50,7 +67,7 @@ pub fn runner_supervisor_name(
 }
 
 @internal
-pub fn poller_name(runtime: QueueRuntime) -> process.Name(Nil) {
+pub fn poller_name(runtime: QueueRuntime) -> process.Name(queue_poller.Message) {
   let QueueRuntime(poller_name:, ..) = runtime
   poller_name
 }

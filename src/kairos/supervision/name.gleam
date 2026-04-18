@@ -2,6 +2,7 @@ import gleam/erlang/process
 import gleam/otp/factory_supervisor
 import gleam/string
 import kairos/job_runner
+import kairos/queue_poller
 import kairos/queue_reaper
 
 @internal
@@ -22,7 +23,7 @@ pub fn queue_runner_supervisor(
 }
 
 @internal
-pub fn queue_poller(queue_name: String) -> process.Name(Nil) {
+pub fn queue_poller(queue_name: String) -> process.Name(queue_poller.Message) {
   process.new_name("kairos-queue-poller-" <> sanitize(queue_name))
 }
 

@@ -11,7 +11,7 @@ pub fn main() -> Nil {
   gleeunit.main()
 }
 
-pub fn start_builds_queue_supervisors_and_stub_processes_test() {
+pub fn start_builds_queue_supervisors_and_poller_processes_test() {
   let assert Ok(config) = sample_config()
   let assert Ok(started) = kairos.start(config)
   let runtime = started.data
@@ -43,7 +43,7 @@ pub fn start_builds_queue_supervisors_and_stub_processes_test() {
   assert process.is_alive(default_reaper)
   assert process.is_alive(mailers_reaper)
 
-  process.send_exit(started.pid)
+  stop_process(started.pid)
 }
 
 pub fn supervised_starts_under_a_parent_supervisor_test() {
@@ -55,7 +55,7 @@ pub fn supervised_starts_under_a_parent_supervisor_test() {
 
   assert process.is_alive(parent.pid)
 
-  process.send_exit(parent.pid)
+  stop_process(parent.pid)
 }
 
 fn sample_config() -> Result(config.Config, config.ConfigError) {
@@ -74,4 +74,10 @@ fn sample_config() -> Result(config.Config, config.ConfigError) {
 
 fn test_connection() -> pog.Connection {
   pog.named_connection(process.new_name("kairos-test-pool"))
+}
+
+fn stop_process(pid: process.Pid) -> Nil {
+  process.unlink(pid)
+  process.send_abnormal_exit(pid, "test shutdown")
+  process.sleep(25)
 }
