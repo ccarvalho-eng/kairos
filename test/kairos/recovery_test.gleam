@@ -80,7 +80,7 @@ pub fn recover_stale_retries_and_discards_stale_executing_jobs_test() {
       "kind=stale attempt=3 reason=stale execution recovered",
     )
 
-    process.send_exit(started.pid)
+    stop_process(started.pid)
   })
 }
 
@@ -110,7 +110,7 @@ pub fn recover_stale_restores_abandoned_jobs_after_restart_test() {
 
     let assert Ok([_claimed]) =
       job_store.claim_available(connection, "default", claim_now, 1)
-    process.send_exit(first_runtime.pid)
+    stop_process(first_runtime.pid)
 
     let assert Ok(second_runtime) = kairos.start(kairos_config)
     let assert Ok(1) =
@@ -130,7 +130,7 @@ pub fn recover_stale_restores_abandoned_jobs_after_restart_test() {
       "kind=stale attempt=1 reason=stale execution recovered",
     )
 
-    process.send_exit(second_runtime.pid)
+    stop_process(second_runtime.pid)
   })
 }
 
@@ -167,7 +167,7 @@ pub fn recover_stale_ignores_recent_executing_jobs_test() {
       == Some(test_db.to_postgres_precision(recent_attempted_at))
     assert list.is_empty(errors)
 
-    process.send_exit(started.pid)
+    stop_process(started.pid)
   })
 }
 
@@ -211,7 +211,7 @@ pub fn recover_stale_ignores_non_positive_stale_window_test() {
       == Some(test_db.to_postgres_precision(stale_attempted_at))
     assert list.is_empty(errors)
 
-    process.send_exit(started.pid)
+    stop_process(started.pid)
   })
 }
 
@@ -233,7 +233,7 @@ pub fn recover_stale_returns_error_for_unknown_queue_test() {
 
     assert result == Error(kairos.QueueRuntimeUnavailable("missing"))
 
-    process.send_exit(started.pid)
+    stop_process(started.pid)
   })
 }
 
@@ -267,7 +267,7 @@ pub fn recover_stale_processes_multiple_batches_test() {
       test_db.to_postgres_precision(now),
     )
 
-    process.send_exit(started.pid)
+    stop_process(started.pid)
   })
 }
 
@@ -405,4 +405,10 @@ fn assert_discarded(
   assert list.length(errors) == expected_error_count
   let assert Ok(last_error) = list.last(errors)
   assert string.contains(last_error, expected_last_error)
+}
+
+fn stop_process(pid: process.Pid) -> Nil {
+  process.unlink(pid)
+  process.send_abnormal_exit(pid, "test shutdown")
+  process.sleep(25)
 }

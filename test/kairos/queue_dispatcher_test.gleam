@@ -11,6 +11,7 @@ import kairos/job_runner
 import kairos/postgres/job_store
 import kairos/postgres/test_db
 import kairos/queue
+import kairos/queue_dispatch
 import kairos/queue_dispatcher
 import kairos/supervision
 import kairos/worker
@@ -28,7 +29,7 @@ pub fn dispatch_claims_jobs_and_starts_supervised_runners_test() {
   test_db.with_database(fn(connection) {
     let contract = success_worker()
     let assert Ok(default_queue) =
-      queue.new(name: "default", concurrency: 2, poll_interval_ms: 1000)
+      queue.new(name: "default", concurrency: 2, poll_interval_ms: 60_000)
     let assert Ok(kairos_config) =
       config.new(connection: connection, queues: [default_queue], workers: [
         worker.register(contract),
@@ -55,14 +56,14 @@ pub fn dispatch_claims_jobs_and_starts_supervised_runners_test() {
       supervision.queue_runner_supervisor_pid(started.data, "default")
     assert process.is_alive(runner_supervisor_pid)
 
-    process.send_exit(started.pid)
+    stop_process(started.pid)
   })
 }
 
 pub fn dispatch_persists_retry_discard_and_cancel_outcomes_test() {
   test_db.with_database(fn(connection) {
     let assert Ok(default_queue) =
-      queue.new(name: "default", concurrency: 3, poll_interval_ms: 1000)
+      queue.new(name: "default", concurrency: 3, poll_interval_ms: 60_000)
     let retry_worker =
       result_worker("workers.retry", worker.Retry("retry later"))
     let discard_worker =
@@ -120,7 +121,7 @@ pub fn dispatch_persists_retry_discard_and_cancel_outcomes_test() {
     assert_discarded(stored_discarded, expected_now, "discard permanently")
     assert_cancelled(stored_cancelled, expected_now, "cancel execution")
 
-    process.send_exit(started.pid)
+    stop_process(started.pid)
   })
 }
 
@@ -128,7 +129,7 @@ pub fn dispatch_returns_claim_failed_for_invalid_connection_test() {
   test_db.with_database(fn(connection) {
     let contract = success_worker()
     let assert Ok(default_queue) =
-      queue.new(name: "default", concurrency: 1, poll_interval_ms: 1000)
+      queue.new(name: "default", concurrency: 1, poll_interval_ms: 60_000)
     let assert Ok(kairos_config) =
       config.new(connection: connection, queues: [default_queue], workers: [
         worker.register(contract),
@@ -145,7 +146,41 @@ pub fn dispatch_returns_claim_failed_for_invalid_connection_test() {
         timestamp.system_time(),
       )
 
-    process.send_exit(started.pid)
+    stop_process(started.pid)
+  })
+}
+
+pub fn dispatch_releases_claimed_jobs_when_runner_supervisor_is_unavailable_test() {
+  test_db.with_database(fn(connection) {
+    let contract = success_worker()
+    let assert Ok(default_queue) =
+      queue.new(name: "default", concurrency: 1, poll_interval_ms: 60_000)
+    let assert Ok(kairos_config) =
+      config.new(connection: connection, queues: [default_queue], workers: [
+        worker.register(contract),
+      ])
+    let assert Ok(enqueued) =
+      kairos.enqueue(kairos_config, contract, ExampleArgs(name: "retry"))
+    let job.EnqueuedJob(id:, ..) = enqueued
+    let now = timestamp.system_time()
+    let assert Ok([claimed_job]) =
+      job_store.claim_available(connection, "default", now, 1)
+
+    let assert Error(queue_dispatch.QueueRuntimeUnavailable("default", _)) =
+      queue_dispatch.dispatch_claimed(
+        kairos_config,
+        "default",
+        process.new_name("missing-runner-supervisor"),
+        [claimed_job],
+        now,
+      )
+    let stored = wait_for_job(connection, id, 20)
+    let job_store.PersistedJob(state:, attempt:, errors:, ..) = stored
+
+    assert state == job.Retryable
+    assert attempt == 1
+    let assert [error] = errors
+    assert string.contains(error, "kind=runner_start")
   })
 }
 
@@ -244,4 +279,10 @@ fn assert_cancelled(
   assert cancelled_at == Some(expected_now)
   let assert [error] = errors
   assert string.contains(error, reason_substring)
+}
+
+fn stop_process(pid: process.Pid) -> Nil {
+  process.unlink(pid)
+  process.send_abnormal_exit(pid, "test shutdown")
+  process.sleep(25)
 }
