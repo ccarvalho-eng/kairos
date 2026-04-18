@@ -1,6 +1,6 @@
 name = "kairos"
 version = "0.1.0"
-description = "Durable background jobs for Gleam on the BEAM."
+description = "A background job runner for Gleam on the BEAM."
 repository = { type = "github", user = "ccarvalho-eng", repo = "kairos" }
 
 [dependencies]

@@ -1,6 +1,6 @@
 //// Typed worker contracts for Kairos jobs.
 ////
-//// Worker definitions in this module encode typed arguments into a durable
+//// Worker definitions in this module encode typed arguments into a persisted
 //// string payload and decode them again before execution.
 
 import kairos/job
@@ -52,13 +52,13 @@ pub fn default_options(contract: Worker(args)) -> job.EnqueueOptions {
   default_options
 }
 
-/// Encodes worker arguments into a durable payload string.
+/// Encodes worker arguments into a persisted payload string.
 pub fn encode(contract: Worker(args), args: args) -> String {
   let Worker(encoder:, ..) = contract
   encoder(args)
 }
 
-/// Decodes a durable payload string into worker arguments.
+/// Decodes a persisted payload string into worker arguments.
 pub fn decode(
   contract: Worker(args),
   payload: String,
