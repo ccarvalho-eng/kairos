@@ -19,6 +19,32 @@ pub fn default_policy_uses_exponential_backoff_test() {
   assert backoff.seconds(backoff.default_policy(), context) == 23
 }
 
+pub fn default_policy_handles_first_attempt_test() {
+  let context =
+    backoff.new_context(
+      attempt: 1,
+      max_attempts: 20,
+      worker_name: "workers.example",
+      queue_name: "default",
+      error: "boom",
+    )
+
+  assert backoff.seconds(backoff.default_policy(), context) == 17
+}
+
+pub fn default_policy_handles_single_attempt_jobs_test() {
+  let context =
+    backoff.new_context(
+      attempt: 1,
+      max_attempts: 1,
+      worker_name: "workers.example",
+      queue_name: "default",
+      error: "boom",
+    )
+
+  assert backoff.seconds(backoff.default_policy(), context) == 17
+}
+
 pub fn default_policy_clamps_large_attempt_ranges_test() {
   let context =
     backoff.new_context(

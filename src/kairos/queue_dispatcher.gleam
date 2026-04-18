@@ -99,16 +99,12 @@ fn release_claimed_jobs(
     [] -> Ok(Nil)
     [claimed_job, ..rest] -> {
       let job_store.PersistedJob(id:, attempt:, ..) = claimed_job
+      let failure_reason = format_dispatch_failure(attempt, start_error)
       use _ <- result.try(job_store.retry(
         connection,
         id,
-        job_runner.retry_scheduled_at(
-          config,
-          claimed_job,
-          now,
-          format_dispatch_failure(attempt, start_error),
-        ),
-        format_dispatch_failure(attempt, start_error),
+        job_runner.retry_scheduled_at(config, claimed_job, now, failure_reason),
+        failure_reason,
       ))
       release_claimed_jobs(config, connection, rest, now, start_error)
     }
