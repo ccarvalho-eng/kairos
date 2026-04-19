@@ -107,7 +107,7 @@ Claiming uses `FOR UPDATE SKIP LOCKED`, and claimed jobs move to `executing` bef
 Kairos recognizes failure through three paths:
 
 1. worker-returned outcomes
-   `Retry`, `Discard`, and `Cancel` map directly into lifecycle transitions.
+   `Success`, `Retry`, `Discard`, and `Cancel` map directly into lifecycle transitions (`completed`, `retryable/discarded`, `discarded`, and `cancelled`).
 2. execution-time failures
    payload decode failures, missing worker registration, and worker crashes are converted into structured retryable or terminal outcomes.
 3. stale execution recovery
