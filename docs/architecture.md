@@ -72,6 +72,113 @@ stateDiagram-v2
     Retryable --> Cancelled
 ```
 
+## Scheduling Algorithm
+
+Kairos schedules work through one poller process per queue.
+
+The algorithm for each queue is:
+
+1. wait `poll_interval_ms`
+2. query PostgreSQL for runnable jobs in that queue
+3. claim up to `concurrency` jobs atomically
+4. start one runner process per claimed job
+5. schedule the next poll tick
+
+Runnable jobs are selected by these predicates:
+
+- `queue_name = current_queue`
+- `state IN ('pending', 'scheduled', 'retryable')`
+- `scheduled_at <= now`
+- `attempt < max_attempts`
+
+Claim order is explicit and stable:
+
+1. `priority DESC`
+2. `scheduled_at ASC`
+3. `inserted_at ASC`
+
+The claim query uses `FOR UPDATE SKIP LOCKED`, so concurrent claimers do not wait on the same rows and do not double-claim the same job.
+
+Once rows are claimed, Kairos updates them to:
+
+- `state = 'executing'`
+- `attempt = attempt + 1`
+- `attempted_at = now`
+
+before starting runners.
+
+This gives the current runtime these properties:
+
+- scheduled jobs do not run before `scheduled_at`
+- higher priority jobs are preferred when several jobs are eligible
+- claim order stays testable and visible in SQL rather than being hidden in process timing
+- already-claimed rows are skipped rather than contested
+
+## Failure Detection And Recovery Algorithm
+
+Kairos treats failure detection as a combination of immediate execution outcomes and later stale-execution recovery.
+
+### Immediate execution outcomes
+
+Each claimed job runs in its own runner process.
+The runner resolves the persisted `worker_name`, decodes the payload, executes the worker, and then persists one lifecycle transition.
+
+The transition rules are:
+
+- worker returns `Success`
+  move to `completed`
+- worker returns `Retry(reason)`
+  move to `retryable` if `attempt < max_attempts`, otherwise `discarded`
+- worker returns `Discard(reason)`
+  move to `discarded`
+- worker returns `Cancel(reason)`
+  move to `cancelled`
+- payload decode fails
+  move to `discarded`
+- worker crashes
+  move to `retryable` if retries remain, otherwise `discarded`
+- worker is missing from config
+  move to `discarded`
+
+Retry scheduling is not immediate by default.
+Kairos computes the next `scheduled_at` from the worker's backoff policy and the current retry context.
+
+### Persistence failure handling
+
+If the runner computes a retryable transition but the persistence write itself fails, Kairos attempts one recovery path:
+
+- only retryable transitions are retried at the persistence boundary
+- terminal transitions are not rewritten into different states
+
+That keeps recovery narrow and avoids resurrecting jobs that were meant to end.
+
+### Stale execution recovery
+
+Kairos also has one reaper process per queue.
+The reaper is not the scheduler; it is an operational recovery mechanism for jobs left in `executing`.
+
+The recovery algorithm is:
+
+1. compute `attempted_before = now - stale_for`
+2. select stale rows in the target queue where:
+   - `state = 'executing'`
+   - `attempted_at IS NOT NULL`
+   - `attempted_at <= attempted_before`
+3. lock them with `FOR UPDATE SKIP LOCKED`
+4. process them in bounded batches
+5. for each stale job:
+   - move to `retryable` when `attempt < max_attempts`
+   - otherwise move to `discarded`
+
+The public `kairos.recover_stale(...)` API loops batch by batch until a batch returns `0`, rather than hiding the whole backlog behind one synchronous recovery call.
+
+This gives the recovery path these properties:
+
+- stale detection is explicit and configurable through `stale_for`
+- recovery work is bounded per batch
+- stale jobs are not silently left in `executing` forever
+- exhausted stale jobs become terminal instead of looping indefinitely
+
 ## Module Map
 
 ### Public boundary

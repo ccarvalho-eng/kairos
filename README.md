@@ -76,6 +76,45 @@ On `main`, Kairos can:
 
 The runtime topology and module boundaries are documented in [`docs/architecture.md`](./docs/architecture.md).
 
+## Scheduling And Failure Detection
+
+For evaluator-focused details, the short version is:
+
+- scheduling is queue-local and poll-driven
+- runnable jobs are claimed atomically from PostgreSQL
+- failure detection combines explicit worker outcomes, crash handling, and stale execution recovery
+
+### Scheduling algorithm
+
+Each queue owns a poller process with its own `poll_interval_ms`.
+On each tick, Kairos tries to claim up to that queue's `concurrency` worth of jobs where:
+
+- `queue_name` matches the current queue
+- `state` is `pending`, `scheduled`, or `retryable`
+- `scheduled_at <= now`
+- `attempt < max_attempts`
+
+Claim order is explicit:
+
+1. higher `priority` first
+2. earlier `scheduled_at` first
+3. earlier `inserted_at` first
+
+Claiming uses `FOR UPDATE SKIP LOCKED`, and claimed jobs move to `executing` before runners start.
+
+### Failure detection algorithm
+
+Kairos recognizes failure through three paths:
+
+1. worker-returned outcomes
+   `Retry`, `Discard`, and `Cancel` map directly into lifecycle transitions.
+2. execution-time failures
+   payload decode failures, missing worker registration, and worker crashes are converted into structured retryable or terminal outcomes.
+3. stale execution recovery
+   a per-queue reaper scans `executing` jobs whose `attempted_at` is older than `now - stale_for`, in bounded batches, and moves them back to a retryable path or a terminal discarded state.
+
+The detailed runtime algorithms and boundaries are documented in [`docs/architecture.md`](./docs/architecture.md).
+
 ## PostgreSQL Setup
 
 The PostgreSQL integration suite expects:
