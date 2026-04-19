@@ -7,11 +7,11 @@
 [![CI](https://github.com/ccarvalho-eng/kairos/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ccarvalho-eng/kairos/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE)
 
-Typed background jobs for Gleam on the BEAM.
+Typed background jobs for Gleam.
 
 </div>
 
-Kairos is an early-stage background job runner for Gleam on the BEAM. On `main` today it provides typed worker contracts, PostgreSQL-backed job persistence, queue configuration, autonomous queue polling, supervised job execution, cancellation before execution, retry backoff, and stale execution recovery.
+Kairos is an early-stage background job runner for Gleam. On `main` today it provides typed worker contracts, PostgreSQL-backed job persistence, queue configuration, autonomous queue polling, supervised job execution, cancellation before execution, retry backoff, and stale execution recovery.
 
 Expect the `0.x` API and supervision model to keep moving while the runtime and operational surface harden.
 
@@ -47,6 +47,8 @@ Start here:
 - [`docs/README.md`](./docs/README.md)
 - [`docs/setup.md`](./docs/setup.md)
 - [`docs/architecture.md`](./docs/architecture.md)
+- [`docs/features/README.md`](./docs/features/README.md)
+- [`docs/project-status.md`](./docs/project-status.md)
 
 ## Quick Start
 

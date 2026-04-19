@@ -1,7 +1,7 @@
 name = "kairos"
 version = "0.1.0"
 licences = ["Apache-2.0"]
-description = "A background job runner for Gleam on the BEAM."
+description = "A background job runner for Gleam."
 repository = { type = "github", user = "ccarvalho-eng", repo = "kairos" }
 
 [dependencies]
