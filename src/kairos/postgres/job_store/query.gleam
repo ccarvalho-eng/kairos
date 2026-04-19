@@ -58,6 +58,23 @@ pub fn fetch_for_update() -> String {
 }
 
 @internal
+pub fn list_filtered() -> String {
+  "
+  SELECT
+  " <> selected_columns("kairos_jobs") <> "
+  FROM kairos_jobs
+  WHERE ($1::TEXT IS NULL OR id::TEXT = $1)
+    AND ($2::TEXT IS NULL OR queue_name = $2)
+    AND ($3::TEXT IS NULL OR worker_name = $3)
+    AND (
+      COALESCE(array_length($4::TEXT[], 1), 0) = 0
+      OR state = ANY($4::TEXT[])
+    )
+  ORDER BY updated_at DESC, inserted_at DESC, id DESC
+  "
+}
+
+@internal
 pub fn fetch_available() -> String {
   "
   SELECT
@@ -179,6 +196,22 @@ pub fn cancel_before_execution() -> String {
     errors = array_append(kairos_jobs.errors, $3::TEXT)
   WHERE id = $1
     AND state IN ('pending', 'scheduled', 'retryable')
+  " <> returned_columns("kairos_jobs")
+}
+
+@internal
+pub fn retry_now() -> String {
+  "
+  UPDATE kairos_jobs
+  SET
+    state = 'pending',
+    scheduled_at = $2,
+    completed_at = NULL,
+    discarded_at = NULL,
+    cancelled_at = NULL,
+    max_attempts = GREATEST(kairos_jobs.max_attempts, kairos_jobs.attempt + 1)
+  WHERE id = $1
+    AND state IN ('discarded', 'cancelled')
   " <> returned_columns("kairos_jobs")
 }
 

@@ -33,12 +33,14 @@ Kairos on `main` currently supports:
 - configuring named queues and supervising Kairos inside a host app
 - enqueueing jobs with queue, priority, max-attempts, and schedule options
 - storing jobs in PostgreSQL and atomically claiming runnable jobs per queue
+- inspecting persisted jobs through a typed admin query API
 - polling queues automatically and dispatching claimed jobs through supervised runners
 - cancelling queued jobs before execution
+- manually retrying discarded or cancelled jobs through a typed admin API
 - retrying failed jobs with configurable backoff
 - recovering stale `executing` jobs back into a runnable or terminal state
 
-Kairos on `main` does not yet provide a full operational surface for inspection, telemetry, pruning, or advanced queue controls. The runtime is useful now, but still intentionally narrow.
+Kairos on `main` does not yet provide a full operational surface for telemetry, pruning, or advanced queue controls. The runtime is useful now, but still intentionally narrow.
 
 ## Docs
 

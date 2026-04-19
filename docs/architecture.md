@@ -14,6 +14,7 @@ Kairos is a PostgreSQL-backed background job runtime with four main layers:
 The public boundary is intentionally small:
 
 - `kairos.gleam` exposes startup, enqueue, cancellation, and stale recovery
+- `admin.gleam` exposes typed job inspection plus explicit retry and cancellation admin helpers
 - `config.gleam` owns queue and worker registration for a runtime instance
 - `job.gleam`, `worker.gleam`, `queue.gleam`, and `backoff.gleam` define the typed domain model
 
@@ -185,8 +186,10 @@ This gives the recovery path these properties:
 
 - `src/kairos.gleam`
   Owns the package-level API for start, enqueue, cancel, and stale recovery.
+- `src/kairos/admin.gleam`
+  Owns typed job inspection and explicit admin mutations over persisted jobs.
 - `src/kairos/job.gleam`
-  Owns job state and enqueue options.
+  Owns job state, enqueue options, and inspection-facing job snapshots.
 - `src/kairos/worker.gleam`
   Owns typed worker contracts, payload decoding, and perform results.
 - `src/kairos/queue.gleam`
@@ -245,8 +248,8 @@ The current folder structure is still clean enough to scale if new work follows 
 
 ## Current Pressure Points
 
-- `kairos.gleam` is growing into a package facade for multiple operational APIs.
+- the admin surface is still intentionally small and may need pagination or richer filters later
 - Logging and telemetry are still minimal.
-- Admin and inspection APIs are not yet first-class.
+- pruning and advanced queue controls are not yet first-class.
 
 Those are still acceptable at the current maturity level, but future work should avoid collapsing more runtime details into the top-level package module.

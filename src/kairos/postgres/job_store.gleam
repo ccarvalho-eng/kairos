@@ -1,5 +1,6 @@
 //// PostgreSQL persistence primitives for Kairos jobs.
 
+import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/time/timestamp
 import kairos/job
@@ -130,6 +131,26 @@ pub fn fetch_for_update(
   |> map_optional_row_result
 }
 
+pub fn list(
+  connection: db.Connection,
+  id_filter: Option(String),
+  queue_name_filter: Option(String),
+  worker_name_filter: Option(String),
+  state_filters: List(job.JobState),
+) -> Result(List(PersistedJob), StoreError) {
+  let state_names = list.map(state_filters, job.state_name)
+
+  query.list_filtered()
+  |> db.query
+  |> db.parameter(db.nullable(db.text, id_filter))
+  |> db.parameter(db.nullable(db.text, queue_name_filter))
+  |> db.parameter(db.nullable(db.text, worker_name_filter))
+  |> db.parameter(db.array(db.text, state_names))
+  |> db.returning(raw_job.decoder())
+  |> db.execute(connection)
+  |> map_many_row_result
+}
+
 pub fn fetch_available(
   connection: db.Connection,
   now: timestamp.Timestamp,
@@ -249,6 +270,20 @@ pub fn cancel_before_execution(
   |> db.parameter(db.text(id))
   |> db.parameter(db.timestamp(cancelled_at))
   |> db.parameter(db.text(error))
+  |> db.returning(raw_job.decoder())
+  |> db.execute(connection)
+  |> map_single_row_result
+}
+
+pub fn retry_now(
+  connection: db.Connection,
+  id: String,
+  scheduled_at: timestamp.Timestamp,
+) -> Result(PersistedJob, StoreError) {
+  query.retry_now()
+  |> db.query
+  |> db.parameter(db.text(id))
+  |> db.parameter(db.timestamp(scheduled_at))
   |> db.returning(raw_job.decoder())
   |> db.execute(connection)
   |> map_single_row_result
