@@ -15,6 +15,10 @@ pub type QueryError {
   QueryUnexpectedStoredRowCount(expected: Int, actual: Int)
 }
 
+pub type QueryOptionError {
+  NonPositiveLimit
+}
+
 pub type RetryError {
   JobNotFound(String)
   JobNotRetryable(job.JobState)
@@ -29,67 +33,105 @@ pub opaque type Query {
     queue_name: Option(String),
     worker_name: Option(String),
     states: List(job.JobState),
+    limit: Int,
   )
 }
 
 pub fn new_query() -> Query {
-  Query(id: None, queue_name: None, worker_name: None, states: [])
+  Query(
+    id: None,
+    queue_name: None,
+    worker_name: None,
+    states: [],
+    limit: default_query_limit(),
+  )
 }
 
 pub fn with_id(query: Query, id: String) -> Query {
-  let Query(queue_name:, worker_name:, states:, ..) = query
+  let Query(queue_name:, worker_name:, states:, limit:, ..) = query
   Query(
     id: Some(id),
     queue_name: queue_name,
     worker_name: worker_name,
     states: states,
+    limit: limit,
   )
 }
 
 pub fn with_queue(query: Query, queue_name: String) -> Query {
-  let Query(id:, worker_name:, states:, ..) = query
+  let Query(id:, worker_name:, states:, limit:, ..) = query
   Query(
     id: id,
     queue_name: Some(queue_name),
     worker_name: worker_name,
     states: states,
+    limit: limit,
   )
 }
 
 pub fn with_worker(query: Query, worker_name: String) -> Query {
-  let Query(id:, queue_name:, states:, ..) = query
+  let Query(id:, queue_name:, states:, limit:, ..) = query
   Query(
     id: id,
     queue_name: queue_name,
     worker_name: Some(worker_name),
     states: states,
+    limit: limit,
   )
 }
 
 pub fn with_state(query: Query, state: job.JobState) -> Query {
-  let Query(id:, queue_name:, worker_name:, ..) = query
-  Query(id: id, queue_name: queue_name, worker_name: worker_name, states: [
-    state,
-  ])
+  let Query(id:, queue_name:, worker_name:, limit:, ..) = query
+  Query(
+    id: id,
+    queue_name: queue_name,
+    worker_name: worker_name,
+    states: [state],
+    limit: limit,
+  )
 }
 
 pub fn with_states(query: Query, states: List(job.JobState)) -> Query {
-  let Query(id:, queue_name:, worker_name:, ..) = query
+  let Query(id:, queue_name:, worker_name:, limit:, ..) = query
   Query(
     id: id,
     queue_name: queue_name,
     worker_name: worker_name,
     states: states,
+    limit: limit,
   )
+}
+
+pub fn with_limit(query: Query, limit: Int) -> Result(Query, QueryOptionError) {
+  case limit <= 0 {
+    True -> Error(NonPositiveLimit)
+    False -> {
+      let Query(id:, queue_name:, worker_name:, states:, ..) = query
+      Ok(Query(
+        id: id,
+        queue_name: queue_name,
+        worker_name: worker_name,
+        states: states,
+        limit: limit,
+      ))
+    }
+  }
 }
 
 pub fn list(
   config: config.Config,
   query: Query,
 ) -> Result(List(job.JobSnapshot), QueryError) {
-  let Query(id:, queue_name:, worker_name:, states:) = query
+  let Query(id:, queue_name:, worker_name:, states:, limit:) = query
 
-  job_store.list(config.connection(config), id, queue_name, worker_name, states)
+  job_store.list(
+    config.connection(config),
+    id,
+    queue_name,
+    worker_name,
+    states,
+    limit,
+  )
   |> result.map(list_from_persisted)
   |> result.map_error(map_query_store_error)
 }
@@ -151,6 +193,10 @@ fn can_retry(state: job.JobState) -> Bool {
     job.Cancelled -> True
     _ -> False
   }
+}
+
+fn default_query_limit() -> Int {
+  100
 }
 
 fn list_from_persisted(

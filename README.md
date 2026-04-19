@@ -33,7 +33,7 @@ Kairos on `main` currently supports:
 - configuring named queues and supervising Kairos inside a host app
 - enqueueing jobs with queue, priority, max-attempts, and schedule options
 - storing jobs in PostgreSQL and atomically claiming runnable jobs per queue
-- inspecting persisted jobs through an admin query API
+- inspecting persisted jobs through a bounded admin query API
 - polling queues automatically and dispatching claimed jobs through supervised runners
 - cancelling queued jobs before execution
 - manually retrying discarded or cancelled jobs through an admin API

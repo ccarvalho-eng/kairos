@@ -99,6 +99,30 @@ pub fn list_filters_jobs_by_id_queue_worker_and_state_test() {
     assert discarded_queue == "beta"
     assert discarded_payload == "beta-email"
 
+    let terminal_query =
+      admin.new_query() |> admin.with_states([job.Discarded, job.Retryable])
+    let assert Ok(terminal_jobs) = admin.list(kairos_config, terminal_query)
+    let terminal_ids =
+      terminal_jobs
+      |> list.map(fn(snapshot) {
+        let job.JobSnapshot(id:, ..) = snapshot
+        id
+      })
+    assert list.length(terminal_jobs) == 2
+    assert list.contains(terminal_ids, alpha_cleanup_id)
+    assert list.contains(terminal_ids, beta_email_id)
+
+    let all_query = admin.new_query() |> admin.with_states([])
+    let assert Ok(all_jobs) = admin.list(kairos_config, all_query)
+    assert list.length(all_jobs) == 3
+
+    let assert Ok(limited_query) =
+      admin.new_query()
+      |> admin.with_states([])
+      |> admin.with_limit(2)
+    let assert Ok(limited_jobs) = admin.list(kairos_config, limited_query)
+    assert list.length(limited_jobs) == 2
+
     let assert Ok([filtered_job]) =
       admin.list(
         kairos_config,
@@ -128,6 +152,15 @@ pub fn list_filters_jobs_by_id_queue_worker_and_state_test() {
     assert list.contains(returned_ids, alpha_cleanup_id)
     assert list.contains(returned_ids, beta_email_id) == False
   })
+}
+
+pub fn with_limit_rejects_non_positive_limits_test() {
+  let assert Error(admin.NonPositiveLimit) =
+    admin.new_query() |> admin.with_limit(0)
+  let assert Error(admin.NonPositiveLimit) =
+    admin.new_query() |> admin.with_limit(-1)
+
+  Nil
 }
 
 pub fn retry_at_requeues_cancelled_and_discarded_jobs_test() {
@@ -347,6 +380,7 @@ fn assert_retried(
     attempt: attempt,
     max_attempts: max_attempts,
     scheduled_at: scheduled_at,
+    attempted_at: attempted_at,
     completed_at: completed_at,
     discarded_at: discarded_at,
     cancelled_at: cancelled_at,
@@ -358,6 +392,7 @@ fn assert_retried(
   assert attempt == expected_attempt
   assert max_attempts == expected_max_attempts
   assert scheduled_at == expected_retry_at
+  assert attempted_at == None
   assert completed_at == None
   assert discarded_at == None
   assert cancelled_at == None

@@ -63,7 +63,7 @@ pub fn list_filtered() -> String {
   SELECT
   " <> selected_columns("kairos_jobs") <> "
   FROM kairos_jobs
-  WHERE ($1::TEXT IS NULL OR id::TEXT = $1)
+  WHERE ($1::TEXT IS NULL OR id = ($1::TEXT)::UUID)
     AND ($2::TEXT IS NULL OR queue_name = $2)
     AND ($3::TEXT IS NULL OR worker_name = $3)
     AND (
@@ -71,6 +71,7 @@ pub fn list_filtered() -> String {
       OR state = ANY($4::TEXT[])
     )
   ORDER BY updated_at DESC, inserted_at DESC, id DESC
+  LIMIT $5
   "
 }
 
@@ -206,6 +207,7 @@ pub fn retry_now() -> String {
   SET
     state = 'pending',
     scheduled_at = $2,
+    attempted_at = NULL,
     completed_at = NULL,
     discarded_at = NULL,
     cancelled_at = NULL,

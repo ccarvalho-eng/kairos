@@ -17,7 +17,7 @@ Kairos is already usable, but it is not yet a full operational platform.
 
 Current gaps include:
 
-- rich admin and query APIs
+- broader admin and query APIs
 - telemetry and structured runtime events
 - automatic job pruning and retention policies
 - advanced queue controls such as pause, drain, or scaling behavior

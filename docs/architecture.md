@@ -14,9 +14,11 @@ Kairos is a PostgreSQL-backed background job runtime with four main layers:
 The public boundary is intentionally small:
 
 - `kairos.gleam` exposes startup, enqueue, cancellation, and stale recovery
-- `admin.gleam` exposes job inspection plus explicit retry and cancellation admin helpers
+- `admin.gleam` exposes bounded job inspection plus explicit retry and cancellation admin helpers
 - `config.gleam` owns queue and worker registration for a runtime instance
 - `job.gleam`, `worker.gleam`, `queue.gleam`, and `backoff.gleam` define the domain model
+
+Admin job inspection is intentionally bounded. `admin.new_query()` applies a default result limit, and callers can override it explicitly when they need a different batch size.
 
 The runtime boundary is explicit:
 
@@ -71,6 +73,8 @@ stateDiagram-v2
     Pending --> Cancelled
     Scheduled --> Cancelled
     Retryable --> Cancelled
+    Discarded --> Pending: admin retry
+    Cancelled --> Pending: admin retry
 ```
 
 ## Scheduling Algorithm

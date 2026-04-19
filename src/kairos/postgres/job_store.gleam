@@ -137,6 +137,7 @@ pub fn list(
   queue_name_filter: Option(String),
   worker_name_filter: Option(String),
   state_filters: List(job.JobState),
+  limit: Int,
 ) -> Result(List(PersistedJob), StoreError) {
   let state_names = list.map(state_filters, job.state_name)
 
@@ -146,6 +147,7 @@ pub fn list(
   |> db.parameter(db.nullable(db.text, queue_name_filter))
   |> db.parameter(db.nullable(db.text, worker_name_filter))
   |> db.parameter(db.array(db.text, state_names))
+  |> db.parameter(db.int(limit))
   |> db.returning(raw_job.decoder())
   |> db.execute(connection)
   |> map_many_row_result
