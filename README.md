@@ -11,9 +11,11 @@ Background jobs for Gleam.
 
 </div>
 
-Kairos is an early-stage background job runner for Gleam. On `main` today it provides typed worker contracts, PostgreSQL-backed job persistence, queue configuration, autonomous queue polling, supervised job execution, cancellation before execution, retry backoff, and stale execution recovery.
+> [!WARNING]
+> Kairos is archived and should be treated as an experimental weekend project, not an active queue library.
+> The current implementation surfaced correctness and design questions around execution ownership and stale recovery, and no further development is planned.
 
-Expect the `0.x` API and supervision model to keep moving while the runtime and operational surface harden.
+Kairos is an experimental background job runner for Gleam. The codebase remains available as a design and implementation reference, but it is not being hardened toward a production release.
 
 ## Installation
 
@@ -25,9 +27,9 @@ Once the package is published, installation will be:
 gleam add kairos
 ```
 
-## Current Scope
+## What The Experiment Built
 
-Kairos on `main` currently supports:
+Kairos on `main` currently demonstrates:
 
 - defining typed workers with explicit payload encoding and decoding
 - configuring named queues and supervising Kairos inside a host app
@@ -40,7 +42,7 @@ Kairos on `main` currently supports:
 - retrying failed jobs with configurable backoff
 - recovering stale `executing` jobs back into a runnable or terminal state
 
-Kairos on `main` does not yet provide a full operational surface for telemetry, pruning, or advanced queue controls. The runtime is useful now, but still intentionally narrow.
+Those pieces are useful for studying boundaries and queue/runtime mechanics, but they do not add up to a production-ready work queue.
 
 ## Docs
 
@@ -54,6 +56,8 @@ Start here:
 
 ## Quick Start
 
+This setup is preserved for reference and exploration only.
+
 Kairos runs inside the consuming application. The host app owns:
 
 - PostgreSQL pool setup
@@ -66,7 +70,7 @@ The full setup path, worker examples, and per-job option overrides live in [`doc
 
 ## Runtime Summary
 
-On `main`, Kairos can:
+On `main`, Kairos can demonstrate:
 
 - enqueue jobs
 - poll queues automatically
@@ -79,6 +83,8 @@ On `main`, Kairos can:
 The runtime topology and module boundaries are documented in [`docs/architecture.md`](./docs/architecture.md).
 
 ## Scheduling And Failure Detection
+
+These notes describe the archived implementation as it exists today. They are useful for evaluation, but they should not be read as production guarantees.
 
 For evaluator-focused details, the short version is:
 

@@ -1,6 +1,8 @@
 # Architecture
 
-This page documents the current runtime shape on `main`.
+This page documents the archived runtime shape on `main`.
+
+The architecture described here is preserved as reference material. It should not be read as an active roadmap or a production endorsement of the current recovery model.
 
 ## System Overview
 
