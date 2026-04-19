@@ -1,5 +1,7 @@
 # Docs
 
+Kairos is archived. These docs are preserved as reference material for the experiment and the design work it explored.
+
 Read these in this order:
 
 1. [Setup](./setup.md)
@@ -11,4 +13,4 @@ Read these in this order:
 4. [Project Status](./project-status.md)
    For the current scope, stability expectations, and what Kairos is intentionally not trying to do yet.
 
-These pages describe the current `main` branch behavior and module layout.
+These pages describe the archived `main` branch behavior and module layout.
