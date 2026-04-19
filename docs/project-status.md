@@ -4,7 +4,7 @@ Kairos is a `0.x` background job runner for Gleam.
 
 ## What Kairos Already Does
 
-- defines typed workers with explicit encode and decode boundaries
+- defines workers with explicit encode and decode boundaries
 - persists jobs in PostgreSQL
 - supports per-queue polling and supervised execution
 - retries failed jobs with configurable backoff
@@ -17,7 +17,7 @@ Kairos is already usable, but it is not yet a full operational platform.
 
 Current gaps include:
 
-- rich admin and query APIs
+- broader admin and query APIs
 - telemetry and structured runtime events
 - automatic job pruning and retention policies
 - advanced queue controls such as pause, drain, or scaling behavior
@@ -33,7 +33,7 @@ Current gaps include:
 
 Kairos is a good fit today if you want:
 
-- typed background jobs in a Gleam application
+- background jobs in a Gleam application
 - PostgreSQL-backed persistence
 - a runtime you can understand end to end
 - a narrower feature set with room to evolve

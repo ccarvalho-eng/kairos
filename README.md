@@ -7,7 +7,7 @@
 [![CI](https://github.com/ccarvalho-eng/kairos/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ccarvalho-eng/kairos/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE)
 
-Typed background jobs for Gleam.
+Background jobs for Gleam.
 
 </div>
 
@@ -33,12 +33,14 @@ Kairos on `main` currently supports:
 - configuring named queues and supervising Kairos inside a host app
 - enqueueing jobs with queue, priority, max-attempts, and schedule options
 - storing jobs in PostgreSQL and atomically claiming runnable jobs per queue
+- inspecting persisted jobs through a bounded admin query API
 - polling queues automatically and dispatching claimed jobs through supervised runners
 - cancelling queued jobs before execution
+- manually retrying discarded or cancelled jobs through an admin API
 - retrying failed jobs with configurable backoff
 - recovering stale `executing` jobs back into a runnable or terminal state
 
-Kairos on `main` does not yet provide a full operational surface for inspection, telemetry, pruning, or advanced queue controls. The runtime is useful now, but still intentionally narrow.
+Kairos on `main` does not yet provide a full operational surface for telemetry, pruning, or advanced queue controls. The runtime is useful now, but still intentionally narrow.
 
 ## Docs
 
@@ -66,7 +68,7 @@ The full setup path, worker examples, and per-job option overrides live in [`doc
 
 On `main`, Kairos can:
 
-- enqueue typed jobs
+- enqueue jobs
 - poll queues automatically
 - claim runnable jobs atomically
 - execute jobs in supervised runners

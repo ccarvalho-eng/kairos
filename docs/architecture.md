@@ -14,8 +14,11 @@ Kairos is a PostgreSQL-backed background job runtime with four main layers:
 The public boundary is intentionally small:
 
 - `kairos.gleam` exposes startup, enqueue, cancellation, and stale recovery
+- `admin.gleam` exposes bounded job inspection plus explicit retry and cancellation admin helpers
 - `config.gleam` owns queue and worker registration for a runtime instance
-- `job.gleam`, `worker.gleam`, `queue.gleam`, and `backoff.gleam` define the typed domain model
+- `job.gleam`, `worker.gleam`, `queue.gleam`, and `backoff.gleam` define the domain model
+
+Admin job inspection is intentionally bounded. `admin.new_query()` applies a default result limit, and callers can override it explicitly when they need a different batch size.
 
 The runtime boundary is explicit:
 
@@ -70,6 +73,8 @@ stateDiagram-v2
     Pending --> Cancelled
     Scheduled --> Cancelled
     Retryable --> Cancelled
+    Discarded --> Pending: admin retry
+    Cancelled --> Pending: admin retry
 ```
 
 ## Scheduling Algorithm
@@ -185,8 +190,10 @@ This gives the recovery path these properties:
 
 - `src/kairos.gleam`
   Owns the package-level API for start, enqueue, cancel, and stale recovery.
+- `src/kairos/admin.gleam`
+  Owns job inspection and explicit admin mutations over persisted jobs.
 - `src/kairos/job.gleam`
-  Owns job state and enqueue options.
+  Owns job state, enqueue options, and inspection-facing job snapshots.
 - `src/kairos/worker.gleam`
   Owns typed worker contracts, payload decoding, and perform results.
 - `src/kairos/queue.gleam`
@@ -230,7 +237,7 @@ This gives the recovery path these properties:
 
 The current folder structure is still clean enough to scale if new work follows these rules:
 
-1. Keep typed domain concepts in `src/kairos/*.gleam`.
+1. Keep domain concepts in `src/kairos/*.gleam`.
 2. Keep process orchestration in runtime modules, not in `kairos.gleam`.
 3. Keep SQL and row decoding inside `src/kairos/postgres`.
 4. Keep queue polling, dispatch, execution, and stale recovery as separate concerns.
@@ -245,8 +252,8 @@ The current folder structure is still clean enough to scale if new work follows 
 
 ## Current Pressure Points
 
-- `kairos.gleam` is growing into a package facade for multiple operational APIs.
+- the admin surface is still intentionally small and may need pagination or richer filters later
 - Logging and telemetry are still minimal.
-- Admin and inspection APIs are not yet first-class.
+- pruning and advanced queue controls are not yet first-class.
 
 Those are still acceptable at the current maturity level, but future work should avoid collapsing more runtime details into the top-level package module.

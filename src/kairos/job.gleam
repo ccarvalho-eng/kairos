@@ -58,6 +58,28 @@ pub type EnqueuedJob(args) {
   )
 }
 
+pub type JobSnapshot {
+  JobSnapshot(
+    id: String,
+    worker_name: String,
+    payload: String,
+    state: JobState,
+    queue_name: String,
+    priority: Int,
+    attempt: Int,
+    max_attempts: Int,
+    unique_key: Option(String),
+    errors: List(String),
+    scheduled_at: timestamp.Timestamp,
+    attempted_at: Option(timestamp.Timestamp),
+    completed_at: Option(timestamp.Timestamp),
+    discarded_at: Option(timestamp.Timestamp),
+    cancelled_at: Option(timestamp.Timestamp),
+    inserted_at: timestamp.Timestamp,
+    updated_at: timestamp.Timestamp,
+  )
+}
+
 pub fn default_enqueue_options() -> EnqueueOptions {
   EnqueueOptions(
     queue: "default",
